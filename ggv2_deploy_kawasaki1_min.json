@@ -1,0 +1,20 @@
+{
+  "components": {
+    "com.trust.heartbeat": {
+      "componentVersion": "1.0.9",
+      "configurationUpdate": {
+        "merge": "{\"thingName\":\"kawasaki-1\"}"
+      }
+    },
+    "aws.greengrass.Nucleus": {
+      "componentVersion": "2.15.0",
+      "configurationUpdate": {
+        "merge": "{\"accessControl\":{\"aws.greengrass.ipc.mqttproxy\":{\"com.trust.heartbeat:mqtt:1\":{\"resources\":[\"trust/heartbeat/kawasaki-1\"],\"principals\":[\"com.trust.heartbeat\"],\"policyDescription\":\"allow publish to IoT Core\",\"operations\":[\"aws.greengrass#PublishToIoTCore\"]}}}}"
+      }
+    }
+  },
+  "targetArn": "arn:aws:iot:ap-northeast-1:405351594292:thing/kawasaki-1",
+  "deploymentName": "heartbeat-1-0-9-kawasaki1-min"
+}
+
+

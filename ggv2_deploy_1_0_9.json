@@ -1,0 +1,9 @@
+{
+    "components":  {
+                       "com.trust.heartbeat":  {
+                                                   "componentVersion":  "1.0.9"
+                                               }
+                   },
+    "targetArn":  "arn:aws:iot:ap-northeast-1:405351594292:thing/kawasaki-1",
+    "deploymentName":  "heartbeat-1-0-9"
+}

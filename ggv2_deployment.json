@@ -1,0 +1,12 @@
+{
+    "components":  {
+                       "com.trust.heartbeat":  {
+                                                   "configurationUpdate":  {
+                                                                               "merge":  "{\"accessControl\":{\"aws.greengrass.ipc.mqttproxy\":{\"com.trust.heartbeat:mqtt:1\":{\"resources\":[\"trust/#\"],\"policyDescription\":\"allow publish to IoT Core\",\"operations\":[\"aws.greengrass#PublishToIoTCore\"]}}}}"
+                                                                           },
+                                                   "componentVersion":  "1.0.7"
+                                               }
+                   },
+    "targetArn":  "arn:aws:iot:ap-northeast-1:405351594292:thing/kawasaki-1",
+    "deploymentName":  "heartbeat-ipc-wide"
+}

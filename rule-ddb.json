@@ -1,0 +1,1 @@
+{"actions":[{"dynamoDBv2":"System.Collections.Hashtable"}],"sql":"SELECT topic(3) as thingName, timestamp() as lastSeen, \u0027alive\u0027 as status FROM \u0027trust/heartbeat/+\u0027","ruleDisabled":false}

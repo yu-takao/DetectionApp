@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Service": "credentials.iot.amazonaws.com" },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": { "aws:SourceAccount": "405351594292" },
+        "ArnLike": { "aws:SourceArn": "arn:aws:iot:ap-northeast-1:405351594292:rolealias/GreengrassV2TokenExchangeCoreDeviceRoleAlias" }
+      }
+    }
+  ]
+}

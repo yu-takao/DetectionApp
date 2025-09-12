@@ -1,0 +1,18 @@
+{
+  "RecipeFormatVersion": "2020-01-25",
+  "ComponentName": "com.trust.heartbeat",
+  "ComponentVersion": "1.0.4",
+  "ComponentType": "aws.greengrass.generic",
+  "ComponentDescription": "Publish heartbeat to IoT Core periodically.",
+  "Manifests": [
+    {
+      "Artifacts": [
+        { "URI": "s3://gg-artifacts-405351594292-ap-northeast-1/com.trust.heartbeat/1.0.4/heartbeat.py" }
+      ],
+      "Lifecycle": {
+        "Install": { "Script": "python3 -m pip install --upgrade awsiot awscrt" },
+        "Run": { "Script": "GG_THING_NAME=\"{iot:thingName}\" HEARTBEAT_INTERVAL_SEC=\"30\" python3 {artifacts:path}/heartbeat.py", "RequiresPrivilege": true }
+      }
+    }
+  ]
+}

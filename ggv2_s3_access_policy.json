@@ -1,0 +1,21 @@
+{
+    "Version":  "2012-10-17",
+    "Statement":  [
+                      {
+                          "Effect":  "Allow",
+                          "Resource":  "arn:aws:s3:::trust-kawasaki-gg-artifacts-405351594292-ap-northeast-1",
+                          "Action":  [
+                                         "s3:GetBucketLocation",
+                                         "s3:ListBucket"
+                                     ]
+                      },
+                      {
+                          "Effect":  "Allow",
+                          "Resource":  "arn:aws:s3:::trust-kawasaki-gg-artifacts-405351594292-ap-northeast-1/*",
+                          "Action":  [
+                                         "s3:GetObject",
+                                         "s3:GetObjectVersion"
+                                     ]
+                      }
+                  ]
+}

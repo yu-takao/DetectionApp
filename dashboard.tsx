@@ -51,10 +51,8 @@ export default function Dashboard() {
   
 
   
-  const [devicesStatus] = useState([
+  const [devicesStatus, setDevicesStatus] = useState([
     { name: "センサー 1", online: true },
-    { name: "センサー 2", online: false },
-    { name: "センサー 3", online: true },
   ])
   
   const [currentTime, setCurrentTime] = useState<Date | null>(null)
@@ -82,6 +80,25 @@ export default function Dashboard() {
     }, 1000)
 
     return () => clearInterval(interval)
+  }, [])
+
+  // Heartbeat: センサー1の死活取得（15秒ポーリング）
+  useEffect(() => {
+    let aborted = false
+
+    async function fetchHeartbeat() {
+      try {
+        const res = await fetch(`/api/heartbeat?thing=kawasaki-1`, { cache: "no-store" })
+        if (!res.ok) return
+        const data: { status: "Active" | "Offline" } = await res.json()
+        if (aborted) return
+        setDevicesStatus(prev => prev.map((d, idx) => idx === 0 ? { ...d, online: data.status === "Active" } : d))
+      } catch {}
+    }
+
+    fetchHeartbeat()
+    const t = setInterval(fetchHeartbeat, 15000)
+    return () => { aborted = true; clearInterval(t) }
   }, [])
 
   // removed changing data

@@ -1,0 +1,14 @@
+{
+  "components": {
+    "com.trust.heartbeat": {
+      "componentVersion": "1.0.9",
+      "configurationUpdate": {
+        "merge": "{\"thingName\":\"kawasaki-1\"}"
+      }
+    }
+  },
+  "targetArn": "arn:aws:iot:ap-northeast-1:405351594292:thing/kawasaki-1",
+  "deploymentName": "heartbeat-1-0-9-thingname-only"
+}
+
+

@@ -1,0 +1,7 @@
+{
+  "sql": "SELECT topic(3) as thingName, timestamp() as lastSeen, 'alive' as status FROM 'trust/heartbeat/+'",
+  "ruleDisabled": false,
+  "actions": [
+    { "dynamoDBv2": { "roleArn": "arn:aws:iam::405351594292:role/IoTRuleToDynamoDBRole", "putItem": { "tableName": "device_status" } } }
+  ]
+}
