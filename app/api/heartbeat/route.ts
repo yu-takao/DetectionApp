@@ -83,7 +83,10 @@ export async function GET(req: NextRequest) {
 
     return new Response(JSON.stringify(payload), {
       status: 200,
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      },
     });
   } catch (err: unknown) {
     const asAny = err as any;
@@ -101,7 +104,10 @@ export async function GET(req: NextRequest) {
       };
       return new Response(JSON.stringify(payload), {
         status: 200,
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+        },
       });
     }
 
