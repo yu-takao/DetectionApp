@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
-import { fromIni, fromTokenFile } from "@aws-sdk/credential-providers";
+import { fromIni } from "@aws-sdk/credential-providers";
 
 type HeartbeatResponse = {
   thingName: string;
@@ -16,7 +16,7 @@ const TABLE_NAME = process.env.HEARTBEAT_TABLE || "device_status";
 const ACTIVE_THRESHOLD_SEC = Number(process.env.HEARTBEAT_ACTIVE_THRESHOLD_SEC || "90");
 
 // 認証ポリシー:
-// - 本番(Amplify/SSR=AWS_EXECUTION_ENVあり): WebIdentity(実行ロール)を優先し、環境変数の古い一時キーを無視
+// - 本番(Amplify/SSR=AWS_EXECUTION_ENVあり): デフォルトプロバイダチェーンに委ねる（実行ロール）
 // - ローカル: AWS_PROFILE があれば fromIni を使用
 const inRuntime = !!process.env.AWS_EXECUTION_ENV;
 const useIniProfile = !inRuntime && !!process.env.AWS_PROFILE;
@@ -24,9 +24,7 @@ const useIniProfile = !inRuntime && !!process.env.AWS_PROFILE;
 const ddbClient = DynamoDBDocumentClient.from(
   new DynamoDBClient({
     region: REGION,
-    ...(inRuntime
-      ? { credentials: fromTokenFile() }
-      : useIniProfile
+    ...(useIniProfile
       ? { credentials: fromIni({ profile: process.env.AWS_PROFILE || "trust-kawasaki-city-prod" }) }
       : {}),
   })
