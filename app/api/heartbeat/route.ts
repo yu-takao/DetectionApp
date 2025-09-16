@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
-import { fromIni } from "@aws-sdk/credential-providers";
+import { fromIni, fromTokenFile } from "@aws-sdk/credential-providers";
 
 type HeartbeatResponse = {
   thingName: string;
@@ -15,12 +15,18 @@ const REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "ap-n
 const TABLE_NAME = process.env.HEARTBEAT_TABLE || "device_status";
 const ACTIVE_THRESHOLD_SEC = Number(process.env.HEARTBEAT_ACTIVE_THRESHOLD_SEC || "90");
 
-// Amplify(本番)では実行ロールのデフォルト認証を使用し、ローカルではAWS_PROFILEがあればfromIniを使用
-const useIniProfile = !process.env.AWS_EXECUTION_ENV && !!process.env.AWS_PROFILE;
+// 認証ポリシー:
+// - 本番(Amplify/SSR=AWS_EXECUTION_ENVあり): WebIdentity(実行ロール)を優先し、環境変数の古い一時キーを無視
+// - ローカル: AWS_PROFILE があれば fromIni を使用
+const inRuntime = !!process.env.AWS_EXECUTION_ENV;
+const useIniProfile = !inRuntime && !!process.env.AWS_PROFILE;
+
 const ddbClient = DynamoDBDocumentClient.from(
   new DynamoDBClient({
     region: REGION,
-    ...(useIniProfile
+    ...(inRuntime
+      ? { credentials: fromTokenFile() }
+      : useIniProfile
       ? { credentials: fromIni({ profile: process.env.AWS_PROFILE || "trust-kawasaki-city-prod" }) }
       : {}),
   })
