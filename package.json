@@ -9,7 +9,7 @@
     "start": "next start"
   },
   "engines": {
-    "node": ">=18 <21"
+    "node": ">=20 <21"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.887.0",
