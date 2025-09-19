@@ -22,6 +22,8 @@ import {
   Bot,
   Speaker,
   Mic,
+  Ear,
+  Timer,
   Moon,
   Radio,
   RefreshCw,
@@ -44,6 +46,7 @@ import { Badge } from "@/components/ui/badge"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
+import { toast } from "sonner"
 import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts"
 
 export default function Dashboard() {
@@ -57,7 +60,8 @@ export default function Dashboard() {
   
   const [currentTime, setCurrentTime] = useState<Date | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [activeSection, setActiveSection] = useState<"dashboard" | "ai" | "settings" | "sound">("dashboard")
+  const [activeSection, setActiveSection] = useState<"dashboard" | "ai" | "settings" | "sound" | "capture">("dashboard")
+  const [uploading, setUploading] = useState(false)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -263,203 +267,50 @@ export default function Dashboard() {
 
         {/* Main content */}
 <div className="flex gap-6 justify-center">
-          {/* Sidebar */}
-<div className="w-64 flex-shrink-0">
-            <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm h-full">
-              <CardContent className="p-4">
-                <nav className="space-y-2">
-                  <NavItem icon={Command} label="ダッシュボード" active={activeSection==='dashboard'} onClick={() => setActiveSection('dashboard')} />
-                  <NavItem icon={Mic} label="音確認" active={activeSection==='sound'} onClick={() => setActiveSection('sound')} />
+  {/* Sidebar */}
+  <div className="w-64 flex-shrink-0">
+    <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm h-full">
+      <CardContent className="p-4">
+        <nav className="space-y-2">
+          <NavItem icon={Command} label="ダッシュボード" active={activeSection==='dashboard'} onClick={() => setActiveSection('dashboard')} />
+          <NavItem icon={Ear} label="音確認" active={activeSection==='sound'} onClick={() => setActiveSection('sound')} />
+          <NavItem icon={Mic} label="録音" active={activeSection==='capture'} onClick={() => setActiveSection('capture')} />
+          <NavItem icon={MessageSquare} label="AI アシスタント" active={activeSection==='ai'} onClick={() => setActiveSection('ai')} />
+          <NavItem icon={Settings} label="設定" active={activeSection==='settings'} onClick={() => setActiveSection('settings')} />
+        </nav>
+      </CardContent>
+    </Card>
+  </div>
 
-                  <NavItem icon={Bot} label="モデル管理" />
-                  <NavItem icon={MessageSquare} label="AI アシスタント" active={activeSection==='ai'} onClick={() => setActiveSection('ai')} />
-                  <NavItem icon={Settings} label="設定" active={activeSection==='settings'} onClick={() => setActiveSection('settings')} />
-                </nav>
-
-                <>
-                  
-                  <div className="space-y-3">
-                    
-                    
-                    
-                  </div>
-                </>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Main dashboard */}
-<div className="max-w-4xl flex-1">
-            <div className={`grid gap-6 ${activeSection==='dashboard' ? '' : 'hidden'}`}>
-              {/* System overview */}
-              <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm overflow-hidden">
-                <CardHeader className="hidden">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-slate-100 flex items-center">
-                      <Activity className="mr-2 h-5 w-5 text-cyan-500" />
-                      System Overview
-                    </CardTitle>
-                    <div className="flex items-center space-x-2">
-                      <Badge variant="outline" className="bg-slate-800/50 text-cyan-400 border-cyan-500/50 text-xs">
-                        <div className="h-1.5 w-1.5 rounded-full bg-cyan-500 mr-1 animate-pulse"></div>
-                        LIVE
-                      </Badge>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400">
-                        <RefreshCw className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-1"><DeviceStatusCard devices={devicesStatus} /></div>
-
-                    {/* アラート Card moved here */}
-                    <div className="md:col-span-2">
-                      <Card className="bg-slate-800/50 rounded-lg border from-purple-500 to-pink-500 border-purple-500/30 relative overflow-hidden">
-                        <CardHeader className="pb-2">
-                          <CardTitle className="text-slate-100 flex items-center text-base">
-                            <AlertCircle className="mr-2 h-5 w-5 text-purple-500" />
-                            アラート
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-3">
-                            <AlertItem title="センサー１で異音が検出されました" time="09:12:45" description="左のアイコンを押して実際の音をご確認ください。" type="update" />
-                            <AlertItem title="センサー１で異音が検出されました" time="04:02:55" description="左のアイコンを押して実際の音をご確認ください。" type="update" />
-                          </div>
-                        </CardContent>
-                        <div className="absolute -bottom-6 -right-6 h-16 w-16 rounded-full bg-gradient-to-r opacity-20 blur-xl from-purple-500 to-pink-500"></div>
-                      </Card>
-                    </div>
-
-
-
-                  </div>
-
-                  <div className="mt-8">
-                    <Tabs defaultValue="hour" className="w-full">
-                      <div className="relative mb-4">
-                        <TabsList className="bg-slate-800/50 p-1">
-                          <TabsTrigger
-                            value="hour"
-                            className="data-[state=active]:bg-slate-700 data-[state=active]:text-cyan-400"
-                          >
-                            時
-                          </TabsTrigger>
-                          <TabsTrigger
-                            value="day"
-                            className="data-[state=active]:bg-slate-700 data-[state=active]:text-cyan-400"
-                          >
-                            日
-                          </TabsTrigger>
-                          <TabsTrigger
-                            value="week"
-                            className="data-[state=active]:bg-slate-700 data-[state=active]:text-cyan-400"
-                          >
-                            週
-                          </TabsTrigger>
-
-                        </TabsList>
-                        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-slate-100 text-base font-semibold flex items-center space-x-2">
-                          <Activity className="h-5 w-5 text-cyan-500" />
-                          <span>稼働音状況</span>
-                        </div>
-
-
-                      </div>
-
-                      <TabsContent value="hour" className="mt-0">
-                        <div className="h-64 w-full relative bg-slate-800/30 rounded-lg border border-slate-700/50 overflow-hidden">
-                          <PerformanceChart />
-
-
-                        </div>
-                      </TabsContent>
-
-                      {false && (<TabsContent value="processes" className="mt-0">
-                        <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 overflow-hidden">
-                          <div className="grid grid-cols-12 text-xs text-slate-400 p-3 border-b border-slate-700/50 bg-slate-800/50">
-                            <div className="col-span-1">PID</div>
-                            <div className="col-span-4">Process</div>
-                            <div className="col-span-2">User</div>
-                            <div className="col-span-2">CPU</div>
-                            <div className="col-span-2">Memory</div>
-                            <div className="col-span-1">Status</div>
-                          </div>
-
-                          <div className="divide-y divide-slate-700/30">
-                            <ProcessRow
-                              pid="1024"
-                              name="system_core.exe"
-                              user="SYSTEM"
-                              cpu={12.4}
-                              memory={345}
-                              status="running"
-                            />
-                            <ProcessRow
-                              pid="1842"
-                              name="nexus_service.exe"
-                              user="SYSTEM"
-                              cpu={8.7}
-                              memory={128}
-                              status="running"
-                            />
-                            <ProcessRow
-                              pid="2156"
-                              name="security_monitor.exe"
-                              user="ADMIN"
-                              cpu={5.2}
-                              memory={96}
-                              status="running"
-                            />
-                            <ProcessRow
-                              pid="3012"
-                              name="network_manager.exe"
-                              user="SYSTEM"
-                              cpu={3.8}
-                              memory={84}
-                              status="running"
-                            />
-                            <ProcessRow
-                              pid="4268"
-                              name="user_interface.exe"
-                              user="USER"
-                              cpu={15.3}
-                              memory={256}
-                              status="running"
-                            />
-                            <ProcessRow
-                              pid="5124"
-                              name="data_analyzer.exe"
-                              user="ADMIN"
-                              cpu={22.1}
-                              memory={512}
-                              status="running"
-                            />
-                          </div>
-                        </div>
-                      </TabsContent>)}
-
-{false && (<TabsContent value="storage" className="mt-0">
-                        <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 p-4">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <StorageItem name="System Drive (C:)" total={512} used={324} type="SSD" />
-                            <StorageItem name="Data Drive (D:)" total={2048} used={1285} type="HDD" />
-                            <StorageItem name="Backup Drive (E:)" total={4096} used={1865} type="HDD" />
-                            <StorageItem name="External Drive (F:)" total={1024} used={210} type="SSD" />
-                          </div>
-                        </div>
-                      </TabsContent>)}
-                      </Tabs>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Security & Alerts */}
-              <div className="hidden">
-
-                <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
+  {/* Main area */}
+  <div className="max-w-4xl flex-1">
+    {activeSection === 'dashboard' && (
+      <div className="grid gap-6">
+        {/* System overview */}
+        <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm overflow-hidden">
+          <CardHeader className="hidden">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-slate-100 flex items-center">
+                <Activity className="mr-2 h-5 w-5 text-cyan-500" />
+                System Overview
+              </CardTitle>
+              <div className="flex items-center space-x-2">
+                <Badge variant="outline" className="bg-slate-800/50 text-cyan-400 border-cyan-500/50 text-xs">
+                  <div className="h-1.5 w-1.5 rounded-full bg-cyan-500 mr-1 animate-pulse"></div>
+                  LIVE
+                </Badge>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400">
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="md:col-span-1"><DeviceStatusCard devices={devicesStatus} /></div>
+              {/* アラート */}
+              <div className="md:col-span-2">
+                <Card className="bg-slate-800/50 rounded-lg border from-purple-500 to-pink-500 border-purple-500/30 relative overflow-hidden">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-slate-100 flex items-center text-base">
                       <AlertCircle className="mr-2 h-5 w-5 text-purple-500" />
@@ -468,141 +319,141 @@ export default function Dashboard() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      <AlertItem
-                        title="Security Scan Complete"
-                        time="14:32:12"
-                        description="No threats detected in system scan"
-                        type="info"
-                      />
-                      <AlertItem
-                        title="Bandwidth Spike Detected"
-                        time="13:45:06"
-                        description="Unusual network activity on port 443"
-                        type="warning"
-                      />
-                      <AlertItem
-                        title="しきい値を超える異音が検出されました"
-                        time="09:12:45"
-                        description="Version 12.4.5 ready to install"
-                        type="update"
-                      />
-                      <AlertItem
-                        title="Backup Completed"
-                        time="04:30:00"
-                        description="Incremental backup to drive E: successful"
-                        type="success"
-                      />
+                      <AlertItem title="センサー１で異音が検出されました" time="09:12:45" description="左のアイコンを押して実際の音をご確認ください。" type="update" />
+                      <AlertItem title="センサー１で異音が検出されました" time="04:02:55" description="左のアイコンを押して実際の音をご確認ください。" type="update" />
                     </div>
                   </CardContent>
+                  <div className="absolute -bottom-6 -right-6 h-16 w-16 rounded-full bg-gradient-to-r opacity-20 blur-xl from-purple-500 to-pink-500"></div>
                 </Card>
               </div>
-
             </div>
 
-            {activeSection === 'ai' && (
-              <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
-                <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                  <CardTitle className="text-slate-100 flex items-center text-base">
-                    <MessageSquare className="mr-2 h-5 w-5 text-blue-500" />
-                    AIアシスタント ログ
-                  </CardTitle>
-                  <Badge variant="outline" className="bg-slate-800/50 text-blue-400 border-blue-500/50">
-                    新着 4 件
-                  </Badge>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <CommunicationItem
-                      sender="異音検知エンジン"
-                      time="20:00:00"
-                      message="センサー1で異音レベル6を検知（しきい値: 4）。録音の確認を推奨します。"
-                      avatar="/placeholder.svg?height=40&width=40"
-                      unread
-                    />
-                    <CommunicationItem
-                      sender="センサー1"
-                      time="19:58:10"
-                      message="直近5分の稼働音がベースラインから逸脱。周波数帯 2.1–2.4kHz に顕著なピークを検出。"
-                      avatar="/placeholder.svg?height=40&width=40"
-                      unread
-                    />
-                    <CommunicationItem
-                      sender="モデル管理"
-                      time="19:30:02"
-                      message="新しい異音パターン候補を検出。サンプル3件のラベル付けを提案します。"
-                      avatar="/placeholder.svg?height=40&width=40"
-                      unread
-                    />
-                    <CommunicationItem
-                      sender="メンテナンス"
-                      time="18:05:18"
-                      message="マイク感度を自動補正しました（+2dB）。次回校正は 2025-09-01 を予定。"
-                      avatar="/placeholder.svg?height=40&width=40"
-                      unread
-                    />
+            <div className="mt-8">
+              <Tabs defaultValue="hour" className="w-full">
+                <div className="relative mb-4">
+                  <TabsList className="bg-slate-800/50 p-1">
+                    <TabsTrigger value="hour" className="data-[state=active]:bg-slate-700 data-[state=active]:text-cyan-400">時</TabsTrigger>
+                    <TabsTrigger value="day" className="data-[state=active]:bg-slate-700 data-[state=active]:text-cyan-400">日</TabsTrigger>
+                    <TabsTrigger value="week" className="data-[state=active]:bg-slate-700 data-[state=active]:text-cyan-400">週</TabsTrigger>
+                  </TabsList>
+                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-slate-100 text-base font-semibold flex items-center space-x-2">
+                    <Activity className="h-5 w-5 text-cyan-500" />
+                    <span>稼働音状況</span>
                   </div>
-                </CardContent>
-                <CardFooter className="border-t border-slate-700/50 pt-4">
-                  <div className="flex items-center w-full space-x-2">
-                    <input
-                      type="text"
-                      placeholder="メッセージを入力..."
-                      className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                    />
-                    <Button size="icon" className="bg-blue-600 hover:bg-blue-700">
-                      <Mic className="h-4 w-4" />
-                    </Button>
-                    <Button size="icon" className="bg-cyan-600 hover:bg-cyan-700">
-                      <MessageSquare className="h-4 w-4" />
-                    </Button>
+                </div>
+                <TabsContent value="hour" className="mt-0">
+                  <div className="h-64 w-full relative bg-slate-800/30 rounded-lg border border-slate-700/50 overflow-hidden">
+                    <PerformanceChart />
                   </div>
-                </CardFooter>
-              </Card>
-            )}
+                </TabsContent>
+              </Tabs>
+            </div>
+          </CardContent>
+        </Card>
 
-            {activeSection === 'settings' && (
-              <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-slate-100 text-base">Environment Controls</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <Radio className="text-cyan-500 mr-2 h-4 w-4" />
-                        <Label className="text-sm text-slate-400">Power Management</Label>
-                      </div>
-                      <Switch />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <Lock className="text-cyan-500 mr-2 h-4 w-4" />
-                        <Label className="text-sm text-slate-400">Security Protocol</Label>
-                      </div>
-                      <Switch defaultChecked />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <Zap className="text-cyan-500 mr-2 h-4 w-4" />
-                        <Label className="text-sm text-slate-400">Power Saving Mode</Label>
-                      </div>
-                      <Switch />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <CircleOff className="text-cyan-500 mr-2 h-4 w-4" />
-                        <Label className="text-sm text-slate-400">Auto Shutdown</Label>
-                      </div>
-                      <Switch defaultChecked />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+        {/* Security & Alerts (hidden) */}
+        <div className="hidden">
+          <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-slate-100 flex items-center text-base">
+                <AlertCircle className="mr-2 h-5 w-5 text-purple-500" />
+                アラート
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <AlertItem title="Security Scan Complete" time="14:32:12" description="No threats detected in system scan" type="info" />
+                <AlertItem title="Bandwidth Spike Detected" time="13:45:06" description="Unusual network activity on port 443" type="warning" />
+                <AlertItem title="しきい値を超える異音が検出されました" time="09:12:45" description="Version 12.4.5 ready to install" type="update" />
+                <AlertItem title="Backup Completed" time="04:30:00" description="Incremental backup to drive E: successful" type="success" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )}
 
+    {activeSection === 'capture' && (
+      <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm overflow-hidden">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-slate-100 text-base flex items-center">
+            <Mic className="mr-2 h-5 w-5 text-cyan-500" />録音（デバイスに指示）
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <RecordTrigger thingName="kawasaki-1" />
+        </CardContent>
+      </Card>
+    )}
+
+    {activeSection === 'ai' && (
+      <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
+        <CardHeader className="pb-2 flex flex-row items-center justify-between">
+          <CardTitle className="text-slate-100 flex items-center text-base">
+            <MessageSquare className="mr-2 h-5 w-5 text-blue-500" />
+            AIアシスタント ログ
+          </CardTitle>
+          <Badge variant="outline" className="bg-slate-800/50 text-blue-400 border-blue-500/50">新着 4 件</Badge>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            <CommunicationItem sender="異音検知エンジン" time="20:00:00" message="センサー1で異音レベル6を検知（しきい値: 4）。録音の確認を推奨します。" avatar="/placeholder.svg?height=40&width=40" unread />
+            <CommunicationItem sender="センサー1" time="19:58:10" message="直近5分の稼働音がベースラインから逸脱。周波数帯 2.1–2.4kHz に顕著なピークを検出。" avatar="/placeholder.svg?height=40&width=40" unread />
+            <CommunicationItem sender="モデル管理" time="19:30:02" message="新しい異音パターン候補を検出。サンプル3件のラベル付けを提案します。" avatar="/placeholder.svg?height=40&width=40" unread />
+            <CommunicationItem sender="メンテナンス" time="18:05:18" message="マイク感度を自動補正しました（+2dB）。次回校正は 2025-09-01 を予定。" avatar="/placeholder.svg?height=40&width=40" unread />
           </div>
+        </CardContent>
+        <CardFooter className="border-t border-slate-700/50 pt-4">
+          <div className="flex items-center w-full space-x-2">
+            <input type="text" placeholder="メッセージを入力..." className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500" />
+            <Button size="icon" className="bg-blue-600 hover:bg-blue-700"><Mic className="h-4 w-4" /></Button>
+            <Button size="icon" className="bg-cyan-600 hover:bg-cyan-700"><MessageSquare className="h-4 w-4" /></Button>
+          </div>
+        </CardFooter>
+      </Card>
+    )}
 
-          {/* Right sidebar */}
+    {activeSection === 'settings' && (
+      <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-slate-100 text-base">Environment Controls</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <Radio className="text-cyan-500 mr-2 h-4 w-4" />
+                <Label className="text-sm text-slate-400">Power Management</Label>
+              </div>
+              <Switch />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <Lock className="text-cyan-500 mr-2 h-4 w-4" />
+                <Label className="text-sm text-slate-400">Security Protocol</Label>
+              </div>
+              <Switch defaultChecked />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <Zap className="text-cyan-500 mr-2 h-4 w-4" />
+                <Label className="text-sm text-slate-400">Power Saving Mode</Label>
+              </div>
+              <Switch />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <CircleOff className="text-cyan-500 mr-2 h-4 w-4" />
+                <Label className="text-sm text-slate-400">Auto Shutdown</Label>
+              </div>
+              <Switch defaultChecked />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    )}
+  </div>
+  {/* Right sidebar */}
           <div className="hidden">
             <div className="grid gap-6">
               {/* System time */}
@@ -751,6 +602,43 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+function RecordTrigger({ thingName }: { thingName: string }) {
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle")
+  const [msg, setMsg] = useState<string>("")
+  async function sendCommand() {
+    try {
+      setStatus("sending")
+      setMsg("")
+      const res = await fetch("/api/device/record", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ thing: thingName, delaySec: 5, durationSec: 10, ext: "flac" }),
+      })
+      if (!res.ok) throw new Error("failed")
+      setStatus("sent")
+      setMsg("デバイスに録音指示を送信しました。5秒後に10秒録音します。")
+      toast.success("録音指示を送信しました")
+    } catch {
+      setStatus("error")
+      setMsg("送信に失敗しました。")
+      toast.error("録音指示の送信に失敗しました")
+    }
+  }
+  return (
+    <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-sm text-slate-300">ラズパイへ録音コマンドを送信します（5秒後に10秒録音）。</div>
+        <Badge variant="outline" className="bg-slate-800/50 text-cyan-400 border-cyan-500/50 text-xs">
+          {status.toUpperCase()}
+        </Badge>
+      </div>
+      <Button onClick={sendCommand} disabled={status === "sending"} className="bg-cyan-600 hover:bg-cyan-700">
+        <Mic className="h-4 w-4 mr-2" /> 録音を指示
+      </Button>
+      {!!msg && <div className="text-sm text-slate-300 mt-3">{msg}</div>}
     </div>
   )
 }
