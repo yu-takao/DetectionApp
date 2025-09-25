@@ -386,7 +386,7 @@ export default function Dashboard() {
       <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm overflow-hidden">
         <CardHeader className="pb-2">
           <CardTitle className="text-slate-100 text-base flex items-center">
-            <Mic className="mr-2 h-5 w-5 text-cyan-500" />録音（デバイスに指示）
+            <Mic className="mr-2 h-5 w-5 text-cyan-500" />録音
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -419,7 +419,7 @@ export default function Dashboard() {
                 disabled={recBusy==="sending"}
                 className="bg-cyan-600 hover:bg-cyan-700"
               >
-                <Mic className="h-4 w-4 mr-2"/> 録音を指示
+                <Mic className="h-4 w-4 mr-2"/> 録音
               </Button>
               {!!recMsg && <div className="text-sm text-slate-300 mt-3">{recMsg}</div>}
             </div>
