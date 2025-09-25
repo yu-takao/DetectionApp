@@ -92,7 +92,7 @@ export default function Dashboard() {
 
     async function fetchHeartbeat() {
       try {
-        const res = await fetch(`/api/heartbeat?thing=kawasaki-1`, { cache: "no-store" })
+        const res = await fetch(`/api/heartbeat?thing=kawasaki-ras-1`, { cache: "no-store" })
         if (!res.ok) {
           if (!aborted) {
             setDevicesStatus(prev => prev.map((d, idx) => idx === 0 ? { ...d, online: false } : d))

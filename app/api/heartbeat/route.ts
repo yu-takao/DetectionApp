@@ -33,12 +33,60 @@ function createDdbClient() {
   );
 }
 
+/**
+ * Pick and normalize lastSeen from a DynamoDB item.
+ * Accepts multiple legacy/variant attribute names and both seconds and milliseconds.
+ */
+function pickLastSeenMillis(item: Record<string, unknown> | undefined | null): number | null {
+  if (!item) return null;
+
+  // Candidates in priority order (support legacy and common variants)
+  const candidates: unknown[] = [
+    (item as any).lastSeen,
+    (item as any).lastseen,
+    (item as any).lastTs,
+    (item as any).last_ts,
+    (item as any).last_seen,
+    (item as any).timeMillis,
+    (item as any).timemillis,
+    (item as any).timestamp,
+    (item as any).ts,
+    // Nested payload variants
+    (item as any)?.payload?.lastSeen,
+    (item as any)?.payload?.timeMillis,
+    (item as any)?.payload?.timemillis,
+    (item as any)?.payload?.timestamp,
+  ];
+
+  let raw: unknown = undefined;
+  for (const v of candidates) {
+    if (v !== undefined && v !== null) {
+      raw = v;
+      break;
+    }
+  }
+
+  if (raw === undefined || raw === null) return null;
+
+  let num: number | null = null;
+  if (typeof raw === "number") {
+    num = raw;
+  } else if (typeof raw === "string") {
+    const n = Number(raw);
+    if (!Number.isNaN(n)) num = n;
+  }
+
+  if (num == null) return null;
+  // Normalize to milliseconds
+  return num > 1_000_000_000_000 ? num : num * 1000;
+}
+
 // 簡易メモリキャッシュ（同一コンテナ内での一時フォールバック用）
 const heartbeatCache = new Map<string, { payload: HeartbeatResponse; ts: number }>();
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const thingName = searchParams.get("thing") || "kawasaki-1";
+  const thingName = searchParams.get("thing") || "kawasaki-ras-1";
 
   try {
     const ddbClient = createDdbClient();
@@ -51,7 +99,7 @@ export async function GET(req: NextRequest) {
     );
 
     const nowMs = Date.now();
-    let item = (result.Item || {}) as { lastSeen?: unknown; lastTs?: unknown };
+    let item = (result.Item || {}) as Record<string, unknown>;
 
     // Fallback: 稀に整合性遅延等でGet未取得の場合、Scanで補完（小規模テーブル前提）
     if (!result.Item) {
@@ -69,18 +117,7 @@ export async function GET(req: NextRequest) {
         }
       } catch {}
     }
-    // lastSeen または後方互換で lastTs を参照
-    const raw = (item.lastSeen ?? item.lastTs) as unknown;
-    let lastSeenNum: number | null = null;
-    if (typeof raw === "number") {
-      lastSeenNum = raw;
-    } else if (typeof raw === "string") {
-      const n = Number(raw);
-      if (!Number.isNaN(n)) lastSeenNum = n;
-    }
-    const lastSeenMs = lastSeenNum != null
-      ? (lastSeenNum > 1_000_000_000_000 ? lastSeenNum : lastSeenNum * 1000)
-      : null;
+    const lastSeenMs = pickLastSeenMillis(item);
 
     const isActive = !!lastSeenMs && (nowMs - lastSeenMs) <= ACTIVE_THRESHOLD_SEC * 1000;
 
@@ -152,7 +189,7 @@ export async function GET(req: NextRequest) {
         );
 
         const nowMs = Date.now();
-        let item = (result.Item || {}) as { lastSeen?: unknown; lastTs?: unknown };
+        let item = (result.Item || {}) as Record<string, unknown>;
         if (!result.Item) {
           try {
             const scan = await fresh.send(
@@ -164,20 +201,11 @@ export async function GET(req: NextRequest) {
               })
             );
             if (scan.Items && scan.Items.length > 0) {
-              item = scan.Items[0] as typeof item;
+              item = scan.Items[0] as Record<string, unknown>;
             }
           } catch {}
         }
-        const raw = (item.lastSeen ?? item.lastTs) as unknown;
-        let lastSeenNum: number | null = null;
-        if (typeof raw === "number") lastSeenNum = raw;
-        else if (typeof raw === "string") {
-          const n = Number(raw);
-          if (!Number.isNaN(n)) lastSeenNum = n;
-        }
-        const lastSeenMs = lastSeenNum != null
-          ? (lastSeenNum > 1_000_000_000_000 ? lastSeenNum : lastSeenNum * 1000)
-          : null;
+        const lastSeenMs = pickLastSeenMillis(item);
 
         const isActive = !!lastSeenMs && (nowMs - lastSeenMs) <= ACTIVE_THRESHOLD_SEC * 1000;
         const payload: HeartbeatResponse = {
