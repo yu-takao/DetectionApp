@@ -38,6 +38,7 @@ import {
 
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -62,6 +63,14 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [activeSection, setActiveSection] = useState<"dashboard" | "ai" | "settings" | "sound" | "capture">("dashboard")
   const [uploading, setUploading] = useState(false)
+  const [recManualDuration, setRecManualDuration] = useState<number>(10)
+  const [recConfigEnabled, setRecConfigEnabled] = useState<boolean>(false)
+  const [recConfigInterval, setRecConfigInterval] = useState<number>(600)
+  const [recConfigDuration, setRecConfigDuration] = useState<number>(10)
+  const [recConfigBucket, setRecConfigBucket] = useState<string>("recordings-kawasaki-city")
+  const [recConfigPrefix, setRecConfigPrefix] = useState<string>("ras-1")
+  const [recBusy, setRecBusy] = useState<"idle"|"sending">("idle")
+  const [recMsg, setRecMsg] = useState<string>("")
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -381,7 +390,96 @@ export default function Dashboard() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <RecordTrigger thingName="kawasaki-1" />
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* 手動録音 */}
+            <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
+              <div className="text-slate-200 mb-3 font-medium">手動録音</div>
+              <div className="flex items-center gap-2 mb-3">
+                <label className="text-sm text-slate-400 w-24">録音時間(s)</label>
+                <Input type="number" min={1} max={300} value={recManualDuration}
+                  onChange={(e)=>setRecManualDuration(Number(e.target.value)||10)} className="bg-slate-900 border-slate-700" />
+              </div>
+              <Button
+                onClick={async()=>{
+                  try{
+                    setRecBusy("sending"); setRecMsg("")
+                    const res = await fetch("/api/device/record",{
+                      method:"POST",
+                      headers:{"content-type":"application/json"},
+                      body: JSON.stringify({ thing:"kawasaki-ras-1", delaySec:0, durationSec: recManualDuration, ext:"flac" })
+                    })
+                    if(!res.ok) throw new Error("failed")
+                    toast.success("録音コマンドを送信しました")
+                    setRecMsg("録音コマンドを送信しました。S3へ保存されます。")
+                  }catch{
+                    toast.error("録音コマンドの送信に失敗しました")
+                    setRecMsg("送信に失敗しました。")
+                  }finally{ setRecBusy("idle") }
+                }}
+                disabled={recBusy==="sending"}
+                className="bg-cyan-600 hover:bg-cyan-700"
+              >
+                <Mic className="h-4 w-4 mr-2"/> 録音を指示
+              </Button>
+              {!!recMsg && <div className="text-sm text-slate-300 mt-3">{recMsg}</div>}
+            </div>
+
+            {/* 定期録音設定 */}
+            <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
+              <div className="text-slate-200 mb-3 font-medium">定期録音</div>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="text-sm text-slate-400 w-24">有効</label>
+                <Switch checked={recConfigEnabled} onCheckedChange={setRecConfigEnabled} />
+              </div>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="text-sm text-slate-400 w-24">間隔(s)</label>
+                <Input type="number" min={0} max={86400} value={recConfigInterval}
+                  onChange={(e)=>setRecConfigInterval(Number(e.target.value)||0)} className="bg-slate-900 border-slate-700" />
+              </div>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="text-sm text-slate-400 w-24">録音時間(s)</label>
+                <Input type="number" min={1} max={300} value={recConfigDuration}
+                  onChange={(e)=>setRecConfigDuration(Number(e.target.value)||10)} className="bg-slate-900 border-slate-700" />
+              </div>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="text-sm text-slate-400 w-24">Bucket</label>
+                <Input value={recConfigBucket} onChange={(e)=>setRecConfigBucket(e.target.value)} className="bg-slate-900 border-slate-700" />
+              </div>
+              <div className="flex items-center gap-2 mb-4">
+                <label className="text-sm text-slate-400 w-24">Prefix</label>
+                <Input value={recConfigPrefix} onChange={(e)=>setRecConfigPrefix(e.target.value)} className="bg-slate-900 border-slate-700" />
+              </div>
+              <Button
+                onClick={async()=>{
+                  try{
+                    setRecBusy("sending"); setRecMsg("")
+                    const res = await fetch("/api/device/record-config",{
+                      method:"POST",
+                      headers:{"content-type":"application/json"},
+                      body: JSON.stringify({
+                        thing: "kawasaki-ras-1",
+                        enabled: recConfigEnabled,
+                        intervalSec: recConfigInterval,
+                        durationSec: recConfigDuration,
+                        bucket: recConfigBucket,
+                        prefix: recConfigPrefix
+                      })
+                    })
+                    if(!res.ok) throw new Error("failed")
+                    toast.success("録音設定を送信しました")
+                    setRecMsg("設定を反映しました。")
+                  }catch{
+                    toast.error("録音設定の送信に失敗しました")
+                    setRecMsg("送信に失敗しました。")
+                  }finally{ setRecBusy("idle") }
+                }}
+                disabled={recBusy==="sending"}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                設定を反映
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     )}
