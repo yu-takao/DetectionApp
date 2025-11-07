@@ -19,7 +19,6 @@ import {
   type LucideIcon,
   type LucideProps,
   MessageSquare,
-  Bot,
   Speaker,
   Mic,
   Ear,
@@ -38,7 +37,6 @@ import {
 
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -47,7 +45,6 @@ import { Badge } from "@/components/ui/badge"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import { toast } from "sonner"
 import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts"
 
 export default function Dashboard() {
@@ -61,16 +58,11 @@ export default function Dashboard() {
   
   const [currentTime, setCurrentTime] = useState<Date | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [activeSection, setActiveSection] = useState<"dashboard" | "ai" | "settings" | "sound" | "capture">("dashboard")
+  const [activeSection, setActiveSection] = useState<"dashboard" | "ai" | "sound">("dashboard")
+  type AudioItem = { key: string; url: string; size?: number; lastModified?: string }
+  const [audioItems, setAudioItems] = useState<AudioItem[]>([])
+  const [audioLoading, setAudioLoading] = useState<boolean>(false)
   const [uploading, setUploading] = useState(false)
-  const [recManualDuration, setRecManualDuration] = useState<number>(10)
-  const [recConfigEnabled, setRecConfigEnabled] = useState<boolean>(false)
-  const [recConfigInterval, setRecConfigInterval] = useState<number>(600)
-  const [recConfigDuration, setRecConfigDuration] = useState<number>(10)
-  const [recConfigBucket, setRecConfigBucket] = useState<string>("recordings-kawasaki-city")
-  const [recConfigPrefix, setRecConfigPrefix] = useState<string>("ras-1")
-  const [recBusy, setRecBusy] = useState<"idle"|"sending">("idle")
-  const [recMsg, setRecMsg] = useState<string>("")
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -81,6 +73,26 @@ export default function Dashboard() {
     }, 2000)
 
     return () => clearTimeout(timer)
+  }, [])
+
+  // 最新10件の音声リスト取得（10秒ポーリング）
+  useEffect(() => {
+    let aborted = false
+    async function fetchLatest() {
+      try {
+        setAudioLoading(true)
+        const res = await fetch("/api/audio/latest", { cache: "no-store" })
+        if (!res.ok) return
+        const data: { items?: AudioItem[] } = await res.json()
+        if (!aborted && Array.isArray(data.items)) setAudioItems(data.items)
+      } finally {
+        setAudioLoading(false)
+      }
+    }
+    // 最初に1回 + 10秒間隔
+    fetchLatest()
+    const t = setInterval(fetchLatest, 10000)
+    return () => { aborted = true; clearInterval(t) }
   }, [])
 
   // Update time
@@ -240,6 +252,22 @@ export default function Dashboard() {
     })
   }
 
+  // ISO8601 → ローカル時刻文字列（24h）
+  const formatIsoLocal = (iso?: string) => {
+    if (!iso) return ""
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ""
+    return d.toLocaleString("ja-JP", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    })
+  }
+
   return (
     <div
       className={`${theme} min-h-screen bg-gradient-to-br from-black to-slate-900 text-slate-100 relative overflow-hidden`}
@@ -269,7 +297,7 @@ export default function Dashboard() {
           <div className="flex items-center space-x-2">
             <Hexagon className="h-8 w-8 text-cyan-500" />
             <span className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-              SonicEye
+              OtoMoni
             </span>
           </div>
         </header>
@@ -283,9 +311,7 @@ export default function Dashboard() {
         <nav className="space-y-2">
           <NavItem icon={Command} label="ダッシュボード" active={activeSection==='dashboard'} onClick={() => setActiveSection('dashboard')} />
           <NavItem icon={Ear} label="音確認" active={activeSection==='sound'} onClick={() => setActiveSection('sound')} />
-          <NavItem icon={Mic} label="録音" active={activeSection==='capture'} onClick={() => setActiveSection('capture')} />
           <NavItem icon={MessageSquare} label="AI アシスタント" active={activeSection==='ai'} onClick={() => setActiveSection('ai')} />
-          <NavItem icon={Settings} label="設定" active={activeSection==='settings'} onClick={() => setActiveSection('settings')} />
         </nav>
       </CardContent>
     </Card>
@@ -328,8 +354,7 @@ export default function Dashboard() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      <AlertItem title="センサー１で異音が検出されました" time="09:12:45" description="左のアイコンを押して実際の音をご確認ください。" type="update" />
-                      <AlertItem title="センサー１で異音が検出されました" time="04:02:55" description="左のアイコンを押して実際の音をご確認ください。" type="update" />
+                      <AlertItem title="異音は検出されていません" time="現在" description="設備は正常に稼働しています。" type="success" />
                     </div>
                   </CardContent>
                   <div className="absolute -bottom-6 -right-6 h-16 w-16 rounded-full bg-gradient-to-r opacity-20 blur-xl from-purple-500 to-pink-500"></div>
@@ -382,103 +407,45 @@ export default function Dashboard() {
       </div>
     )}
 
-    {activeSection === 'capture' && (
+    
+
+    {activeSection === 'sound' && (
       <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm overflow-hidden">
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-2 flex items-center justify-between">
           <CardTitle className="text-slate-100 text-base flex items-center">
-            <Mic className="mr-2 h-5 w-5 text-cyan-500" />録音
+            <Ear className="mr-2 h-5 w-5 text-cyan-500" />音確認（最新10件）
           </CardTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-slate-400"
+            onClick={async()=>{
+              try {
+                setAudioLoading(true)
+                const res = await fetch("/api/audio/latest", { cache: "no-store" })
+                if(res.ok){ const d = await res.json(); setAudioItems(d.items||[]) }
+              } finally { setAudioLoading(false) }
+            }}
+            disabled={audioLoading}
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
         </CardHeader>
         <CardContent>
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* 手動録音 */}
-            <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
-              <div className="text-slate-200 mb-3 font-medium">手動録音</div>
-              <div className="flex items-center gap-2 mb-3">
-                <label className="text-sm text-slate-400 w-24">録音時間(s)</label>
-                <Input type="number" min={1} max={300} value={recManualDuration}
-                  onChange={(e)=>setRecManualDuration(Number(e.target.value)||10)} className="bg-slate-900 border-slate-700" />
+          <div className="space-y-3">
+            {audioItems.length === 0 && (
+              <div className="text-sm text-slate-400">まだデータがありません。新しい録音が追加されると自動で表示されます。</div>
+            )}
+            {audioItems.map((it, idx) => (
+              <div key={`${it.key}-${idx}`} className="flex items-center justify-between gap-4 bg-slate-800/50 rounded-lg border border-slate-700/50 p-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-slate-200">{formatIsoLocal(it.lastModified)}</div>
+                </div>
+                <div className="audio-dark w-[320px]">
+                  <audio controls src={it.url} preload="none" />
+                </div>
               </div>
-              <Button
-                onClick={async()=>{
-                  try{
-                    setRecBusy("sending"); setRecMsg("")
-                    const res = await fetch("/api/device/record",{
-                      method:"POST",
-                      headers:{"content-type":"application/json"},
-                      body: JSON.stringify({ thing:"kawasaki-ras-1", delaySec:0, durationSec: recManualDuration, ext:"flac" })
-                    })
-                    if(!res.ok) throw new Error("failed")
-                    toast.success("録音コマンドを送信しました")
-                    setRecMsg("録音コマンドを送信しました。S3へ保存されます。")
-                  }catch{
-                    toast.error("録音コマンドの送信に失敗しました")
-                    setRecMsg("送信に失敗しました。")
-                  }finally{ setRecBusy("idle") }
-                }}
-                disabled={recBusy==="sending"}
-                className="bg-cyan-600 hover:bg-cyan-700"
-              >
-                <Mic className="h-4 w-4 mr-2"/> 録音
-              </Button>
-              {!!recMsg && <div className="text-sm text-slate-300 mt-3">{recMsg}</div>}
-            </div>
-
-            {/* 定期録音設定 */}
-            <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
-              <div className="text-slate-200 mb-3 font-medium">定期録音</div>
-              <div className="flex items-center gap-2 mb-2">
-                <label className="text-sm text-slate-400 w-24">有効</label>
-                <Switch checked={recConfigEnabled} onCheckedChange={setRecConfigEnabled} />
-              </div>
-              <div className="flex items-center gap-2 mb-2">
-                <label className="text-sm text-slate-400 w-24">間隔(s)</label>
-                <Input type="number" min={0} max={86400} value={recConfigInterval}
-                  onChange={(e)=>setRecConfigInterval(Number(e.target.value)||0)} className="bg-slate-900 border-slate-700" />
-              </div>
-              <div className="flex items-center gap-2 mb-2">
-                <label className="text-sm text-slate-400 w-24">録音時間(s)</label>
-                <Input type="number" min={1} max={300} value={recConfigDuration}
-                  onChange={(e)=>setRecConfigDuration(Number(e.target.value)||10)} className="bg-slate-900 border-slate-700" />
-              </div>
-              <div className="flex items-center gap-2 mb-2">
-                <label className="text-sm text-slate-400 w-24">Bucket</label>
-                <Input value={recConfigBucket} onChange={(e)=>setRecConfigBucket(e.target.value)} className="bg-slate-900 border-slate-700" />
-              </div>
-              <div className="flex items-center gap-2 mb-4">
-                <label className="text-sm text-slate-400 w-24">Prefix</label>
-                <Input value={recConfigPrefix} onChange={(e)=>setRecConfigPrefix(e.target.value)} className="bg-slate-900 border-slate-700" />
-              </div>
-              <Button
-                onClick={async()=>{
-                  try{
-                    setRecBusy("sending"); setRecMsg("")
-                    const res = await fetch("/api/device/record-config",{
-                      method:"POST",
-                      headers:{"content-type":"application/json"},
-                      body: JSON.stringify({
-                        thing: "kawasaki-ras-1",
-                        enabled: recConfigEnabled,
-                        intervalSec: recConfigInterval,
-                        durationSec: recConfigDuration,
-                        bucket: recConfigBucket,
-                        prefix: recConfigPrefix
-                      })
-                    })
-                    if(!res.ok) throw new Error("failed")
-                    toast.success("録音設定を送信しました")
-                    setRecMsg("設定を反映しました。")
-                  }catch{
-                    toast.error("録音設定の送信に失敗しました")
-                    setRecMsg("送信に失敗しました。")
-                  }finally{ setRecBusy("idle") }
-                }}
-                disabled={recBusy==="sending"}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                設定を反映
-              </Button>
-            </div>
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -491,15 +458,9 @@ export default function Dashboard() {
             <MessageSquare className="mr-2 h-5 w-5 text-blue-500" />
             AIアシスタント ログ
           </CardTitle>
-          <Badge variant="outline" className="bg-slate-800/50 text-blue-400 border-blue-500/50">新着 4 件</Badge>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            <CommunicationItem sender="異音検知エンジン" time="20:00:00" message="センサー1で異音レベル6を検知（しきい値: 4）。録音の確認を推奨します。" avatar="/placeholder.svg?height=40&width=40" unread />
-            <CommunicationItem sender="センサー1" time="19:58:10" message="直近5分の稼働音がベースラインから逸脱。周波数帯 2.1–2.4kHz に顕著なピークを検出。" avatar="/placeholder.svg?height=40&width=40" unread />
-            <CommunicationItem sender="モデル管理" time="19:30:02" message="新しい異音パターン候補を検出。サンプル3件のラベル付けを提案します。" avatar="/placeholder.svg?height=40&width=40" unread />
-            <CommunicationItem sender="メンテナンス" time="18:05:18" message="マイク感度を自動補正しました（+2dB）。次回校正は 2025-09-01 を予定。" avatar="/placeholder.svg?height=40&width=40" unread />
-          </div>
+          <div className="text-sm text-slate-400">ログはまだありません。</div>
         </CardContent>
         <CardFooter className="border-t border-slate-700/50 pt-4">
           <div className="flex items-center w-full space-x-2">
@@ -511,45 +472,7 @@ export default function Dashboard() {
       </Card>
     )}
 
-    {activeSection === 'settings' && (
-      <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-slate-100 text-base">Environment Controls</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Radio className="text-cyan-500 mr-2 h-4 w-4" />
-                <Label className="text-sm text-slate-400">Power Management</Label>
-              </div>
-              <Switch />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Lock className="text-cyan-500 mr-2 h-4 w-4" />
-                <Label className="text-sm text-slate-400">Security Protocol</Label>
-              </div>
-              <Switch defaultChecked />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Zap className="text-cyan-500 mr-2 h-4 w-4" />
-                <Label className="text-sm text-slate-400">Power Saving Mode</Label>
-              </div>
-              <Switch />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <CircleOff className="text-cyan-500 mr-2 h-4 w-4" />
-                <Label className="text-sm text-slate-400">Auto Shutdown</Label>
-              </div>
-              <Switch defaultChecked />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    )}
+    
   </div>
   {/* Right sidebar */}
           <div className="hidden">
@@ -703,43 +626,7 @@ export default function Dashboard() {
     </div>
   )
 }
-function RecordTrigger({ thingName }: { thingName: string }) {
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle")
-  const [msg, setMsg] = useState<string>("")
-  async function sendCommand() {
-    try {
-      setStatus("sending")
-      setMsg("")
-      const res = await fetch("/api/device/record", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ thing: thingName, delaySec: 5, durationSec: 10, ext: "flac" }),
-      })
-      if (!res.ok) throw new Error("failed")
-      setStatus("sent")
-      setMsg("デバイスに録音指示を送信しました。5秒後に10秒録音します。")
-      toast.success("録音指示を送信しました")
-    } catch {
-      setStatus("error")
-      setMsg("送信に失敗しました。")
-      toast.error("録音指示の送信に失敗しました")
-    }
-  }
-  return (
-    <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-sm text-slate-300">ラズパイへ録音コマンドを送信します（5秒後に10秒録音）。</div>
-        <Badge variant="outline" className="bg-slate-800/50 text-cyan-400 border-cyan-500/50 text-xs">
-          {status.toUpperCase()}
-        </Badge>
-      </div>
-      <Button onClick={sendCommand} disabled={status === "sending"} className="bg-cyan-600 hover:bg-cyan-700">
-        <Mic className="h-4 w-4 mr-2" /> 録音を指示
-      </Button>
-      {!!msg && <div className="text-sm text-slate-300 mt-3">{msg}</div>}
-    </div>
-  )
-}
+ 
 
 // Component for nav items
 function NavItem({
@@ -1073,40 +960,7 @@ function AlertItem({
   )
 }
 
-// Communication item component
-function CommunicationItem({
-  sender,
-  time,
-  message,
-  avatar,
-  unread,
-}: {
-  sender: string
-  time: string
-  message: string
-  avatar: string
-  unread?: boolean
-}) {
-  return (
-    <div className={`flex space-x-3 p-2 rounded-md ${unread ? "bg-slate-800/50 border border-slate-700/50" : ""}`}>
-      <div className="h-8 w-8 flex items-center justify-center rounded-full bg-slate-800/70 border border-slate-700/50">
-        <Bot className="h-4 w-4 text-cyan-500" />
-      </div>
-      <div className="flex-1">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-medium text-slate-200">{sender}</div>
-          <div className="text-xs text-slate-500">{time}</div>
-        </div>
-        <div className="text-xs text-slate-400 mt-1">{message}</div>
-      </div>
-      {unread && (
-        <div className="flex-shrink-0 self-center">
-          <div className="h-2 w-2 rounded-full bg-cyan-500"></div>
-        </div>
-      )}
-    </div>
-  )
-}
+// Communication listは後で実データ接続時に追加
 
 // Action button component
 function ActionButton({ icon: Icon, label }: { icon: LucideIcon; label: string }) {

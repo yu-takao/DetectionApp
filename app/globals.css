@@ -74,3 +74,19 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Dark audio controls surface */
+.audio-dark {
+  background-color: #0f172a; /* slate-900 */
+  border: 1px solid #334155; /* slate-700 */
+  border-radius: 0.5rem; /* matches --radius */
+  padding: 4px 8px;
+}
+.audio-dark audio {
+  width: 100%;
+  color-scheme: dark; /* prefer dark native controls */
+  background: transparent;
+}
+/* Chromium/WebKit customizations (best-effort) */
+.audio-dark audio::-webkit-media-controls-panel { background-color: #0f172a; }
+.audio-dark audio::-webkit-media-controls-enclosure { background: transparent; }
