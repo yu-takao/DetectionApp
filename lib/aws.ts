@@ -29,11 +29,20 @@ export const awsCredentialsProvider = useStaticCreds
 export const s3Client = new S3Client({ region, credentials: awsCredentialsProvider });
 export const dynamoDbClient = new DynamoDBClient({ region, credentials: awsCredentialsProvider });
 
-export const awsConfig = {
-  bucketName: process.env.S3_BUCKET_NAME as string,
-  audioTableName: process.env.AUDIO_TABLE_NAME as string,
-  audioPrefix: process.env.S3_AUDIO_PREFIX || "",
-};
+// Read runtime config from environment at call time to avoid build-time freezing.
+export function getAwsRuntimeConfig() {
+  const bucketName =
+    (process.env.S3_BUCKET_NAME as string) ||
+    (process.env.OTOMONI_S3_BUCKET_NAME as string);
+  const audioTableName =
+    (process.env.AUDIO_TABLE_NAME as string) ||
+    (process.env.OTOMONI_AUDIO_TABLE_NAME as string);
+  const audioPrefix =
+    process.env.S3_AUDIO_PREFIX ||
+    process.env.OTOMONI_S3_AUDIO_PREFIX ||
+    "";
+  return { bucketName, audioTableName, audioPrefix };
+}
 
 export type SignedAudioItem = {
   key: string;

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { dynamoDbClient, s3Client, awsConfig, GetObjectCommand } from "@/lib/aws";
+import { dynamoDbClient, s3Client, getAwsRuntimeConfig, GetObjectCommand } from "@/lib/aws";
 import { QueryCommand } from "@aws-sdk/client-dynamodb";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -7,6 +7,7 @@ export const revalidate = 0;
 
 export async function GET() {
   try {
+    const awsConfig = getAwsRuntimeConfig();
     if (!awsConfig.audioTableName) {
       return NextResponse.json({ error: "AUDIO_TABLE_NAME is not set" }, { status: 500 });
     }
