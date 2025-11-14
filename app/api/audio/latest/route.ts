@@ -49,12 +49,14 @@ export async function GET() {
           const key = it.key?.S as string;
           const size = it.size?.N ? Number(it.size.N) : undefined;
           const lastModified = it.lastModified?.S as string | undefined;
+          const dbfs = it.dbfs?.N ? Number(it.dbfs.N) : undefined;
+          const equipmentId = it.equipmentId?.S as string | undefined;
           const signed = await getSignedUrl(
             s3Client,
             new GetObjectCommand({ Bucket: bucket, Key: key }),
             { expiresIn: 60 * 5 }
           );
-          return { key, url: signed, size, lastModified };
+          return { key, url: signed, size, lastModified, dbfs, equipmentId };
         })
       );
       // eslint-disable-next-line no-console

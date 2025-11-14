@@ -59,10 +59,11 @@ export default function Dashboard() {
   const [currentTime, setCurrentTime] = useState<Date | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [activeSection, setActiveSection] = useState<"dashboard" | "ai" | "sound">("dashboard")
-  type AudioItem = { key: string; url: string; size?: number; lastModified?: string }
+  type AudioItem = { key: string; url: string; size?: number; lastModified?: string; dbfs?: number; equipmentId?: string }
   const [audioItems, setAudioItems] = useState<AudioItem[]>([])
   const [audioLoading, setAudioLoading] = useState<boolean>(false)
   const [uploading, setUploading] = useState(false)
+  const [status, setStatus] = useState<{ equipmentId?: string; thresholds?: { T_on: number; T_off: number } } | null>(null)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -74,6 +75,31 @@ export default function Dashboard() {
 
     return () => clearTimeout(timer)
   }, [])
+
+  // 設備ステータス（閾値）取得（30秒）
+  useEffect(() => {
+    let aborted = false
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch("/api/machine/status", { cache: "no-store" })
+        if (!res.ok) return
+        const d = await res.json()
+        if (!aborted) setStatus({ equipmentId: d.equipmentId, thresholds: d.thresholds })
+      } catch {}
+    }
+    fetchStatus()
+    const t = setInterval(fetchStatus, 30000)
+    return () => { aborted = true; clearInterval(t) }
+  }, [])
+
+  const classify = (dbfs?: number): "on" | "off" | "unknown" => {
+    const T_on = status?.thresholds?.T_on
+    const T_off = status?.thresholds?.T_off
+    if (typeof dbfs !== "number" || typeof T_on !== "number" || typeof T_off !== "number") return "unknown"
+    if (dbfs > T_on) return "on"
+    if (dbfs < T_off) return "off"
+    return "unknown"
+  }
 
   // 最新10件の音声リスト取得（10秒ポーリング）
   useEffect(() => {
@@ -436,16 +462,25 @@ export default function Dashboard() {
             {audioItems.length === 0 && (
               <div className="text-sm text-slate-400">まだデータがありません。新しい録音が追加されると自動で表示されます。</div>
             )}
-            {audioItems.map((it, idx) => (
+            {audioItems.map((it, idx) => {
+              const state = classify(it.dbfs)
+              const badge =
+                state === "on"
+                  ? <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/30 text-xs">稼働中</Badge>
+                  : state === "off"
+                  ? <Badge variant="outline" className="bg-slate-700/20 text-slate-300 border-slate-600/30 text-xs">停止中</Badge>
+                  : <Badge variant="outline" className="bg-slate-800/40 text-slate-400 border-slate-600/40 text-xs">判定中</Badge>
+              return (
               <div key={`${it.key}-${idx}`} className="flex items-center justify-between gap-4 bg-slate-800/50 rounded-lg border border-slate-700/50 p-3">
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 flex items-center gap-3">
+                  {badge}
                   <div className="text-sm text-slate-200">{formatIsoLocal(it.lastModified)}</div>
                 </div>
                 <div className="audio-dark w-[320px]">
                   <audio controls src={it.url} preload="none" />
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         </CardContent>
       </Card>
