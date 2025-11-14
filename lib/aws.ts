@@ -2,32 +2,29 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 
-// Allow non-reserved env names on hosting platforms (e.g., Amplify Hosting)
-// Prefer OTOMONI_* if provided; otherwise fall back to standard AWS_* for local dev.
-const region =
-  (process.env.OTOMONI_REGION as string) ||
-  (process.env.AWS_REGION as string);
-
-if (!region) {
-  // Fail fast to make misconfiguration obvious at runtime
-  throw new Error("Region is not set (set OTOMONI_REGION or AWS_REGION)");
+// Build-safe: do NOT read env or construct clients at module import time.
+function getRegion(): string {
+  const r = (process.env.OTOMONI_REGION as string) || (process.env.AWS_REGION as string);
+  if (!r) {
+    throw new Error("Region is not set (set OTOMONI_REGION or AWS_REGION)");
+  }
+  return r;
 }
 
-const otmAccessKeyId = process.env.OTOMONI_ACCESS_KEY_ID;
-const otmSecretAccessKey = process.env.OTOMONI_SECRET_ACCESS_KEY;
-const otmSessionToken = process.env.OTOMONI_SESSION_TOKEN;
-const useStaticCreds = !!(otmAccessKeyId && otmSecretAccessKey);
+function getCredentials() {
+  const id = process.env.OTOMONI_ACCESS_KEY_ID;
+  const secret = process.env.OTOMONI_SECRET_ACCESS_KEY;
+  const token = process.env.OTOMONI_SESSION_TOKEN;
+  return id && secret ? { accessKeyId: id as string, secretAccessKey: secret as string, sessionToken: token as string | undefined } : fromNodeProviderChain();
+}
 
-export const awsCredentialsProvider = useStaticCreds
-  ? {
-      accessKeyId: otmAccessKeyId as string,
-      secretAccessKey: otmSecretAccessKey as string,
-      sessionToken: otmSessionToken as string | undefined,
-    }
-  : fromNodeProviderChain();
+export function getS3Client() {
+  return new S3Client({ region: getRegion(), credentials: getCredentials() });
+}
 
-export const s3Client = new S3Client({ region, credentials: awsCredentialsProvider });
-export const dynamoDbClient = new DynamoDBClient({ region, credentials: awsCredentialsProvider });
+export function getDynamoDbClient() {
+  return new DynamoDBClient({ region: getRegion(), credentials: getCredentials() });
+}
 
 // Read runtime config from environment at call time to avoid build-time freezing.
 export function getAwsRuntimeConfig() {

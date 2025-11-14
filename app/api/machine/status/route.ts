@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { QueryCommand } from "@aws-sdk/client-dynamodb"
-import { dynamoDbClient, getAwsRuntimeConfig } from "@/lib/aws"
+import { getDynamoDbClient, getAwsRuntimeConfig } from "@/lib/aws"
 
 export const revalidate = 0
 
@@ -37,6 +37,7 @@ export async function GET(request: Request) {
   const maxAgeMs = Number(process.env.THRESH_MAX_AGE_MS || 24 * 60 * 60 * 1000)
 
   // まずは最新から多めに取り、equipmentId でフィルタ
+  const ddb = getDynamoDbClient()
   const q = new QueryCommand({
     TableName: cfg.audioTableName,
     KeyConditionExpression: "pk = :p",
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
     ScanIndexForward: false,
     Limit: Math.max(N * 3, 300), // 余裕を持って取得（GSIなしのため）
   })
-  const res = await dynamoDbClient.send(q)
+  const res = await ddb.send(q)
   const now = Date.now()
   const all = (res.Items ?? []).map((it) => ({
     dbfs: it.dbfs?.N ? Number(it.dbfs.N) : NaN,

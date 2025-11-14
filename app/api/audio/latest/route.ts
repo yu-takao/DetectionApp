@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { dynamoDbClient, s3Client, getAwsRuntimeConfig, GetObjectCommand } from "@/lib/aws";
+import { getDynamoDbClient, getS3Client, getAwsRuntimeConfig, GetObjectCommand } from "@/lib/aws";
 import { QueryCommand } from "@aws-sdk/client-dynamodb";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -23,6 +23,9 @@ export async function GET() {
     });
 
     // 最新10件を降順で取得
+    const ddb = getDynamoDbClient();
+    const s3 = getS3Client();
+
     const query = new QueryCommand({
       TableName: awsConfig.audioTableName,
       KeyConditionExpression: "pk = :p",
@@ -32,7 +35,7 @@ export async function GET() {
     });
     let res;
     try {
-      res = await dynamoDbClient.send(query);
+      res = await ddb.send(query);
       // eslint-disable-next-line no-console
       console.log("[AUDIO_DIAG] ddb.query.ok", { count: (res.Items ?? []).length });
     } catch (e: any) {
@@ -52,7 +55,7 @@ export async function GET() {
           const dbfs = it.dbfs?.N ? Number(it.dbfs.N) : undefined;
           const equipmentId = it.equipmentId?.S as string | undefined;
           const signed = await getSignedUrl(
-            s3Client,
+            s3,
             new GetObjectCommand({ Bucket: bucket, Key: key }),
             { expiresIn: 60 * 5 }
           );
