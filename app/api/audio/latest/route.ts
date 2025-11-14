@@ -90,13 +90,17 @@ export async function GET() {
     const cand = allForThresh.filter((x) => !equipmentId || x.equipmentId === equipmentId).slice(0, 200);
     let thresholds: { T_on: number; T_off: number; center: number; margin: number } | null = null;
     if (cand.length >= 20) {
+      const qLow = Number(process.env.THRESH_Q_LOW || 0.4);  // P40
+      const qHigh = Number(process.env.THRESH_Q_HIGH || 0.8); // P80
+      const minMarginDb = Number(process.env.THRESH_MARGIN_MIN_DB || 3);
+      const onBiasDb = Number(process.env.THRESH_ON_BIAS_DB || 2); // 稼働側にバイアス
       const dbs = [...cand.map((x) => x.dbfs)].sort((a, b) => a - b);
-      const p30 = computePercentile(dbs, 0.3);
-      const p70 = computePercentile(dbs, 0.7);
-      const gap = p70 - p30;
-      const center = (p30 + p70) / 2;
-      const margin = Math.max(2, 0.2 * Math.max(0, gap));
-      thresholds = { T_on: center + margin / 2, T_off: center - margin / 2, center, margin };
+      const pL = computePercentile(dbs, qLow);
+      const pH = computePercentile(dbs, qHigh);
+      const gap = pH - pL;
+      const center = (pL + pH) / 2;
+      const margin = Math.max(minMarginDb, 0.2 * Math.max(0, gap));
+      thresholds = { T_on: center + margin / 2 + onBiasDb, T_off: center - margin / 2, center, margin };
     }
 
     let items;
