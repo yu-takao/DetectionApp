@@ -12,8 +12,9 @@ function computePercentile(sorted: number[], p: number) {
 }
 
 function classify(db: number, T_on: number, T_off: number, prev: "on" | "off"): "on" | "off" {
-  if (db > T_on) return "on";
-  if (db < T_off) return "off";
+  const tolDb = Number(process.env.THRESH_TOL_DB || 0.5);
+  if (db >= T_on - tolDb) return "on";
+  if (db <= T_off + tolDb) return "off";
   return prev;
 }
 

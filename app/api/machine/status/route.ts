@@ -11,9 +11,10 @@ function computePercentile(sorted: number[], p: number) {
 }
 
 function classify(db: number, T_on: number, T_off: number, prev: "on" | "off") {
+  const tolDb = Number(process.env.THRESH_TOL_DB || 0.5)
   if (isFinite(db)) {
-    if (db > T_on) return "on"
-    if (db < T_off) return "off"
+    if (db >= T_on - tolDb) return "on"
+    if (db <= T_off + tolDb) return "off"
   }
   return prev
 }
@@ -26,6 +27,10 @@ export async function GET(request: Request) {
   const N = Number(process.env.THRESH_N || 200)
   const minSamples = Number(process.env.THRESH_MIN_SAMPLES || 20)
   const maxAgeMs = Number(process.env.THRESH_MAX_AGE_MS || 48 * 60 * 60 * 1000)
+  const qLow = Number(process.env.THRESH_Q_LOW || 0.35) // P35
+  const qHigh = Number(process.env.THRESH_Q_HIGH || 0.75) // P75
+  const minMarginDb = Number(process.env.THRESH_MARGIN_MIN_DB || 3)
+  const onBiasDb = Number(process.env.THRESH_ON_BIAS_DB || 0.5) // 稼働側バイアスは控えめ
 
   // まずは最新から多めに取り、equipmentId でフィルタ
   const ddb = getDynamoDbClient()
@@ -89,12 +94,12 @@ export async function GET(request: Request) {
   }
 
   const dbs = [...filtered.map((x) => x.dbfs)].sort((a, b) => a - b)
-  const p30 = computePercentile(dbs, 0.3)
-  const p70 = computePercentile(dbs, 0.7)
-  const gap = p70 - p30
-  const center = (p30 + p70) / 2
-  const margin = Math.max(2, 0.2 * Math.max(0, gap))
-  const T_on = center + margin / 2
+  const pL = computePercentile(dbs, qLow)
+  const pH = computePercentile(dbs, qHigh)
+  const gap = pH - pL
+  const center = (pL + pH) / 2
+  const margin = Math.max(minMarginDb, 0.2 * Math.max(0, gap))
+  const T_on = center + margin / 2 + onBiasDb
   const T_off = center - margin / 2
 
   // 最新サンプルでの状態（簡易、ヒステリシスは prev=直近推定で代用）
@@ -109,7 +114,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     equipmentId,
     samples: filtered.length,
-    thresholds: { T_on, T_off, center, margin, p30, p70 },
+    thresholds: { T_on, T_off, center, margin, pLow: pL, pHigh: pH },
     latest: { dbfs: latest?.dbfs ?? null, at: latest?.sk?.split("#")[0] ?? null },
     running: state,
     confidence,
