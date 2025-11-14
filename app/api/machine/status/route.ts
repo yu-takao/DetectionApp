@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { QueryCommand } from "@aws-sdk/client-dynamodb"
+import { GetItemCommand, QueryCommand } from "@aws-sdk/client-dynamodb"
 import { getDynamoDbClient, getAwsRuntimeConfig } from "@/lib/aws"
 
 export const revalidate = 0
@@ -27,10 +27,11 @@ export async function GET(request: Request) {
   const N = Number(process.env.THRESH_N || 200)
   const minSamples = Number(process.env.THRESH_MIN_SAMPLES || 20)
   const maxAgeMs = Number(process.env.THRESH_MAX_AGE_MS || 48 * 60 * 60 * 1000)
-  const qLow = Number(process.env.THRESH_Q_LOW || 0.35) // P35
-  const qHigh = Number(process.env.THRESH_Q_HIGH || 0.75) // P75
-  const minMarginDb = Number(process.env.THRESH_MARGIN_MIN_DB || 3)
-  const onBiasDb = Number(process.env.THRESH_ON_BIAS_DB || 0.5) // 稼働側バイアスは控えめ
+  // Defaults (will be overridden by CONFIG if present)
+  let qLow = Number(process.env.THRESH_Q_LOW || 0.35) // P35
+  let qHigh = Number(process.env.THRESH_Q_HIGH || 0.75) // P75
+  let minMarginDb = Number(process.env.THRESH_MARGIN_MIN_DB || 3)
+  let onBiasDb = Number(process.env.THRESH_ON_BIAS_DB || 0.5) // 稼働側バイアスは控えめ
 
   // まずは最新から多めに取り、equipmentId でフィルタ
   const ddb = getDynamoDbClient()
@@ -79,6 +80,21 @@ export async function GET(request: Request) {
   if (!equipmentId) {
     return NextResponse.json({ error: "equipmentId is required" }, { status: 400 })
   }
+
+  // Load overrides from CONFIG
+  try {
+    const cfgItem = await ddb.send(new GetItemCommand({
+      TableName: cfg.audioTableName,
+      Key: { pk: { S: "CONFIG" }, sk: { S: `EQUIP#${equipmentId}` } }
+    }))
+    const num = (n?: { N?: string }) => (n?.N ? Number(n.N) : undefined)
+    if (cfgItem.Item) {
+      qLow = num(cfgItem.Item.qLow) ?? qLow
+      qHigh = num(cfgItem.Item.qHigh) ?? qHigh
+      minMarginDb = num(cfgItem.Item.minMarginDb) ?? minMarginDb
+      onBiasDb = num(cfgItem.Item.onBiasDb) ?? onBiasDb
+    }
+  } catch {}
   const filtered = all
     .filter((x) => x.equipmentId === equipmentId)
     .filter((x) => isFinite(x.dbfs))

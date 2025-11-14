@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDynamoDbClient, getS3Client, getAwsRuntimeConfig, GetObjectCommand } from "@/lib/aws";
-import { QueryCommand } from "@aws-sdk/client-dynamodb";
+import { GetItemCommand, QueryCommand } from "@aws-sdk/client-dynamodb";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export const revalidate = 0;
@@ -91,10 +91,26 @@ export async function GET() {
     const cand = allForThresh.filter((x) => !equipmentId || x.equipmentId === equipmentId).slice(0, 200);
     let thresholds: { T_on: number; T_off: number; center: number; margin: number } | null = null;
     if (cand.length >= 20) {
-      const qLow = Number(process.env.THRESH_Q_LOW || 0.4);  // P40
-      const qHigh = Number(process.env.THRESH_Q_HIGH || 0.8); // P80
-      const minMarginDb = Number(process.env.THRESH_MARGIN_MIN_DB || 3);
-      const onBiasDb = Number(process.env.THRESH_ON_BIAS_DB || 2); // 稼働側にバイアス
+      // Load overrides if present
+      let qLow = Number(process.env.THRESH_Q_LOW || 0.35);
+      let qHigh = Number(process.env.THRESH_Q_HIGH || 0.75);
+      let minMarginDb = Number(process.env.THRESH_MARGIN_MIN_DB || 3);
+      let onBiasDb = Number(process.env.THRESH_ON_BIAS_DB || 0.5);
+      if (equipmentId) {
+        try {
+          const cfgItem = await ddb.send(new GetItemCommand({
+            TableName: awsConfig.audioTableName,
+            Key: { pk: { S: "CONFIG" }, sk: { S: `EQUIP#${equipmentId}` } }
+          }));
+          const num = (n?: { N?: string }) => (n?.N ? Number(n.N) : undefined);
+          if (cfgItem.Item) {
+            qLow = num(cfgItem.Item.qLow) ?? qLow;
+            qHigh = num(cfgItem.Item.qHigh) ?? qHigh;
+            minMarginDb = num(cfgItem.Item.minMarginDb) ?? minMarginDb;
+            onBiasDb = num(cfgItem.Item.onBiasDb) ?? onBiasDb;
+          }
+        } catch {}
+      }
       const dbs = [...cand.map((x) => x.dbfs)].sort((a, b) => a - b);
       const pL = computePercentile(dbs, qLow);
       const pH = computePercentile(dbs, qHigh);

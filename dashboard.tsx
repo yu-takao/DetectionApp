@@ -58,12 +58,14 @@ export default function Dashboard() {
   
   const [currentTime, setCurrentTime] = useState<Date | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [activeSection, setActiveSection] = useState<"dashboard" | "ai" | "sound">("dashboard")
+  const [activeSection, setActiveSection] = useState<"dashboard" | "ai" | "sound" | "settings">("dashboard")
   type AudioItem = { key: string; url: string; size?: number; lastModified?: string; dbfs?: number; equipmentId?: string }
   const [audioItems, setAudioItems] = useState<AudioItem[]>([])
   const [audioLoading, setAudioLoading] = useState<boolean>(false)
   const [uploading, setUploading] = useState(false)
   const [status, setStatus] = useState<{ equipmentId?: string; thresholds?: { T_on: number; T_off: number } } | null>(null)
+  const [cfg, setCfg] = useState<{ equipmentId?: string; qLow?: number; qHigh?: number; minMarginDb?: number; onBiasDb?: number; tolDb?: number; N?: number; maxAgeMs?: number } | null>(null)
+  const [cfgBusy, setCfgBusy] = useState(false)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -338,6 +340,7 @@ export default function Dashboard() {
           <NavItem icon={Command} label="ダッシュボード" active={activeSection==='dashboard'} onClick={() => setActiveSection('dashboard')} />
           <NavItem icon={Ear} label="音確認" active={activeSection==='sound'} onClick={() => setActiveSection('sound')} />
           <NavItem icon={MessageSquare} label="AI アシスタント" active={activeSection==='ai'} onClick={() => setActiveSection('ai')} />
+          <NavItem icon={Settings} label="しきい値 設定" active={activeSection==='settings'} onClick={() => setActiveSection('settings')} />
         </nav>
       </CardContent>
     </Card>
@@ -509,6 +512,57 @@ export default function Dashboard() {
       </Card>
     )}
 
+    {activeSection === 'settings' && (
+      <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
+        <CardHeader className="pb-2 flex items-center justify-between">
+          <CardTitle className="text-slate-100 text-base flex items-center">
+            <Settings className="mr-2 h-5 w-5 text-cyan-500" />しきい値 設定
+          </CardTitle>
+          <div className="text-xs text-slate-400">{cfg?.equipmentId ? `設備: ${cfg.equipmentId}` : ""}</div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2 mb-3">
+            <Button
+              variant="outline"
+              onClick={async()=>{
+                try{
+                  setCfgBusy(true)
+                  const r = await fetch('/api/machine/config', { cache: 'no-store' })
+                  if (r.ok) setCfg(await r.json())
+                } finally { setCfgBusy(false) }
+              }}
+              disabled={cfgBusy}
+              className="border-slate-600 text-slate-200"
+            >読み込み</Button>
+            <Button
+              onClick={async()=>{
+                try{
+                  setCfgBusy(true)
+                  const r = await fetch('/api/machine/config', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(cfg||{}) })
+                  if (r.ok) {
+                    setCfg(await r.json())
+                  }
+                } finally { setCfgBusy(false) }
+              }}
+              disabled={cfgBusy}
+              className="bg-cyan-600 hover:bg-cyan-700"
+            >保存</Button>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <SettingNumber label="qLow (0–1)" value={cfg?.qLow} min={0} max={1} step={0.01} onChange={(v)=>setCfg(prev=>({...prev, qLow:v}))} />
+            <SettingNumber label="qHigh (0–1)" value={cfg?.qHigh} min={0} max={1} step={0.01} onChange={(v)=>setCfg(prev=>({...prev, qHigh:v}))} />
+            <SettingNumber label="minMarginDb" value={cfg?.minMarginDb} min={0} max={12} step={0.1} onChange={(v)=>setCfg(prev=>({...prev, minMarginDb:v}))} />
+            <SettingNumber label="onBiasDb" value={cfg?.onBiasDb} min={-6} max={6} step={0.1} onChange={(v)=>setCfg(prev=>({...prev, onBiasDb:v}))} />
+            <SettingNumber label="tolDb" value={cfg?.tolDb} min={0} max={3} step={0.1} onChange={(v)=>setCfg(prev=>({...prev, tolDb:v}))} />
+            <SettingNumber label="N (samples)" value={cfg?.N} min={20} max={500} step={10} onChange={(v)=>setCfg(prev=>({...prev, N:v}))} />
+            <SettingNumber label="maxAgeHours" value={cfg?.maxAgeMs ? Math.round((cfg.maxAgeMs||0)/(3600000)) : undefined} min={1} max={168} step={1} onChange={(v)=>setCfg(prev=>({...prev, maxAgeMs: v*3600000}))} />
+          </div>
+          <div className="text-xs text-slate-500 mt-3">
+            変更を保存すると次回のAPI計算から反映されます（最新リスト/ステータス）。
+          </div>
+        </CardContent>
+      </Card>
+    )}
     
   </div>
   {/* Right sidebar */}
@@ -1016,3 +1070,30 @@ function ActionButton({ icon: Icon, label }: { icon: LucideIcon; label: string }
 const Info = (props: LucideProps) => <AlertCircle {...props} />
 
 const Check = (props: LucideProps) => <Shield {...props} />
+
+function SettingNumber({
+  label, value, min, max, step, onChange,
+}: {
+  label: string
+  value?: number
+  min: number
+  max: number
+  step: number
+  onChange: (v: number) => void
+}) {
+  return (
+    <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-3">
+      <div className="text-xs text-slate-400 mb-1">{label}</div>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={typeof value === 'number' && isFinite(value) ? value : ''}
+        onChange={(e)=> onChange(Number(e.target.value))}
+        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+      />
+      <div className="mt-1 text-[10px] text-slate-500">範囲: {min}〜{max} / step {step}</div>
+    </div>
+  )
+}
