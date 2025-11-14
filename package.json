@@ -7,7 +7,8 @@
     "dev": "next dev",
     "lint": "next lint",
     "start": "next start",
-    "backfill:audio": "node scripts/backfill-audio-index.mjs"
+    "backfill:audio": "node scripts/backfill-audio-index.mjs",
+    "backfill:dbfs": "node scripts/backfill-dbfs-latest.mjs"
   },
   "engines": {
     "node": ">=20 <21"
