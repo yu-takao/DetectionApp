@@ -1,4 +1,4 @@
-export const revalidate = 60 * 60 * 24 * 365
+export const revalidate = 31536000
 
 const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
