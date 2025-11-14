@@ -47,16 +47,23 @@ export async function GET(request: Request) {
   })
   const res = await ddb.send(q)
   const now = Date.now()
-  const all = (res.Items ?? []).map((it) => ({
-    dbfs: it.dbfs?.N ? Number(it.dbfs.N) : NaN,
-    equipmentId: it.equipmentId?.S as string | undefined,
-    sk: it.sk?.S as string | undefined,
-    ts: (() => {
-      const s = it.lastModified?.S as string | undefined
-      const t = s ? Date.parse(s) : NaN
-      return isNaN(t) ? NaN : t
-    })(),
-  }))
+  const deriveEquipFromKey = (k?: string) => {
+    if (!k) return undefined
+    const parts = k.split("/").filter(Boolean)
+    return parts.length >= 2 ? parts[parts.length - 2] : undefined
+  }
+  const all = (res.Items ?? []).map((it) => {
+    const key = it.key?.S as string | undefined
+    const equip = (it.equipmentId?.S as string | undefined) || deriveEquipFromKey(key)
+    const s = it.lastModified?.S as string | undefined
+    const t = s ? Date.parse(s) : NaN
+    return {
+      dbfs: it.dbfs?.N ? Number(it.dbfs.N) : NaN,
+      equipmentId: equip,
+      sk: it.sk?.S as string | undefined,
+      ts: isNaN(t) ? NaN : t,
+    }
+  })
   const filtered = all
     .filter((x) => x.equipmentId === equipmentId)
     .filter((x) => isFinite(x.dbfs))
