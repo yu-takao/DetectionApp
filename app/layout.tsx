@@ -7,6 +7,11 @@ export const metadata: Metadata = {
   title: 'OtoMoni',
   description: 'OtoMoni - 音のモニタリングアプリケーション',
   generator: 'v0.dev',
+  icons: {
+    icon: '/icon.svg',
+    shortcut: '/icon.svg',
+    apple: '/icon.svg',
+  },
 }
 
 export default function RootLayout({
