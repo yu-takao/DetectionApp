@@ -22,19 +22,10 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const cfg = getAwsRuntimeConfig()
   const equipmentIdParam = searchParams.get("equipmentId") || undefined
-  const defaultEquip = (() => {
-    const p = cfg.audioPrefix || ""
-    const parts = p.split("/").filter(Boolean)
-    return parts.length ? parts[parts.length - 1] : undefined
-  })()
-  const equipmentId = equipmentIdParam || defaultEquip
-  if (!equipmentId) {
-    return NextResponse.json({ error: "equipmentId is required" }, { status: 400 })
-  }
 
   const N = Number(process.env.THRESH_N || 200)
-  const minSamples = Number(process.env.THRESH_MIN_SAMPLES || 30)
-  const maxAgeMs = Number(process.env.THRESH_MAX_AGE_MS || 24 * 60 * 60 * 1000)
+  const minSamples = Number(process.env.THRESH_MIN_SAMPLES || 20)
+  const maxAgeMs = Number(process.env.THRESH_MAX_AGE_MS || 48 * 60 * 60 * 1000)
 
   // まずは最新から多めに取り、equipmentId でフィルタ
   const ddb = getDynamoDbClient()
@@ -64,6 +55,25 @@ export async function GET(request: Request) {
       ts: isNaN(t) ? NaN : t,
     }
   })
+
+  // Decide equipmentId if not provided: choose most frequent in recent items
+  let equipmentId = equipmentIdParam
+  if (!equipmentId) {
+    const counts = new Map<string, number>()
+    for (const a of all) {
+      if (!a.equipmentId) continue
+      counts.set(a.equipmentId, (counts.get(a.equipmentId) || 0) + 1)
+    }
+    let best: string | undefined
+    let bestN = -1
+    for (const [k, v] of counts) {
+      if (v > bestN) { best = k; bestN = v }
+    }
+    equipmentId = best
+  }
+  if (!equipmentId) {
+    return NextResponse.json({ error: "equipmentId is required" }, { status: 400 })
+  }
   const filtered = all
     .filter((x) => x.equipmentId === equipmentId)
     .filter((x) => isFinite(x.dbfs))
