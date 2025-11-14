@@ -1,6 +1,6 @@
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { fromNodeProviderChain, fromStatic } from "@aws-sdk/credential-providers";
+import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 
 // Allow non-reserved env names on hosting platforms (e.g., Amplify Hosting)
 // Prefer OTOMONI_* if provided; otherwise fall back to standard AWS_* for local dev.
@@ -15,14 +15,15 @@ if (!region) {
 
 const otmAccessKeyId = process.env.OTOMONI_ACCESS_KEY_ID;
 const otmSecretAccessKey = process.env.OTOMONI_SECRET_ACCESS_KEY;
+const otmSessionToken = process.env.OTOMONI_SESSION_TOKEN;
 const useStaticCreds = !!(otmAccessKeyId && otmSecretAccessKey);
 
 export const awsCredentialsProvider = useStaticCreds
-  ? fromStatic({
+  ? {
       accessKeyId: otmAccessKeyId as string,
       secretAccessKey: otmSecretAccessKey as string,
-      // sessionToken is optional; add OTOMONI_SESSION_TOKEN if needed
-    })
+      sessionToken: otmSessionToken as string | undefined,
+    }
   : fromNodeProviderChain();
 
 export const s3Client = new S3Client({ region, credentials: awsCredentialsProvider });
