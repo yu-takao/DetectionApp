@@ -38,6 +38,19 @@ export async function GET() {
 
     return NextResponse.json({ items });
   } catch (err: any) {
+    // Emit useful diagnostics to logs for production debugging
+    // Safe subset only (no secrets)
+    // eslint-disable-next-line no-console
+    console.error("GET /api/audio/latest failed", {
+      message: err?.message,
+      name: err?.name,
+      stack: err?.stack,
+      hasRegion: !!process.env.OTOMONI_REGION || !!process.env.AWS_REGION,
+      hasKeyId: !!process.env.OTOMONI_ACCESS_KEY_ID,
+      hasSecret: !!process.env.OTOMONI_SECRET_ACCESS_KEY,
+      table: awsConfig.audioTableName,
+      bucket: awsConfig.bucketName,
+    });
     return NextResponse.json({ error: err?.message ?? "unknown" }, { status: 500 });
   }
 }
