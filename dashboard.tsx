@@ -463,7 +463,9 @@ export default function Dashboard() {
               <div className="text-sm text-slate-400">まだデータがありません。新しい録音が追加されると自動で表示されます。</div>
             )}
             {audioItems.map((it, idx) => {
-              const state = classify(it.dbfs)
+              const serverState = (it as any).state as ("on"|"off"|undefined)
+              // サーバ判定優先。なければクライアント判定でフォールバック
+              const state = serverState ?? classify(it.dbfs)
               const badge =
                 state === "on"
                   ? <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/30 text-xs">稼働中</Badge>

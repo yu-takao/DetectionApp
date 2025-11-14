@@ -5,6 +5,18 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export const revalidate = 0;
 
+function computePercentile(sorted: number[], p: number) {
+  if (sorted.length === 0) return NaN;
+  const idx = Math.round((sorted.length - 1) * p);
+  return sorted[Math.max(0, Math.min(sorted.length - 1, idx))];
+}
+
+function classify(db: number, T_on: number, T_off: number, prev: "on" | "off"): "on" | "off" {
+  if (db > T_on) return "on";
+  if (db < T_off) return "off";
+  return prev;
+}
+
 export async function GET() {
   try {
     const awsConfig = getAwsRuntimeConfig();
@@ -44,6 +56,49 @@ export async function GET() {
       throw e;
     }
 
+    // 補助: 閾値用の広め取得（最大300件）
+    const threshQuery = new QueryCommand({
+      TableName: awsConfig.audioTableName,
+      KeyConditionExpression: "pk = :p",
+      ExpressionAttributeValues: { ":p": { S: "AUDIO" } },
+      ScanIndexForward: false,
+      Limit: 300,
+    });
+    const threshRes = await ddb.send(threshQuery);
+
+    // equipmentId 推定（プレフィックス末尾）
+    const deriveEquipFromKey = (k?: string) => {
+      if (!k) return undefined;
+      const parts = k.split("/").filter(Boolean);
+      return parts.length >= 2 ? parts[parts.length - 2] : undefined;
+    };
+    const defaultEquip = (() => {
+      const parts = (awsConfig.audioPrefix || "").split("/").filter(Boolean);
+      return parts.length ? parts[parts.length - 1] : undefined;
+    })();
+
+    const allForThresh = (threshRes.Items ?? []).map((it) => {
+      const key = it.key?.S as string | undefined;
+      const equip = (it.equipmentId?.S as string | undefined) || deriveEquipFromKey(key);
+      const dbfs = it.dbfs?.N ? Number(it.dbfs.N) : NaN;
+      const lastModified = it.lastModified?.S as string | undefined;
+      const ts = lastModified ? Date.parse(lastModified) : NaN;
+      return { dbfs, equipmentId: equip, ts };
+    }).filter((x) => isFinite(x.dbfs) && isFinite(x.ts));
+
+    const equipmentId = defaultEquip || allForThresh[0]?.equipmentId;
+    const cand = allForThresh.filter((x) => !equipmentId || x.equipmentId === equipmentId).slice(0, 200);
+    let thresholds: { T_on: number; T_off: number; center: number; margin: number } | null = null;
+    if (cand.length >= 20) {
+      const dbs = [...cand.map((x) => x.dbfs)].sort((a, b) => a - b);
+      const p30 = computePercentile(dbs, 0.3);
+      const p70 = computePercentile(dbs, 0.7);
+      const gap = p70 - p30;
+      const center = (p30 + p70) / 2;
+      const margin = Math.max(2, 0.2 * Math.max(0, gap));
+      thresholds = { T_on: center + margin / 2, T_off: center - margin / 2, center, margin };
+    }
+
     let items;
     try {
       items = await Promise.all(
@@ -70,7 +125,30 @@ export async function GET() {
       throw e;
     }
 
-    return NextResponse.json({ items });
+    // サーバ側ヒステリシスで状態補完（最新→古いの順で来るため、古い順に判定して戻す）
+    let states: ("on" | "off")[] = [];
+    if (thresholds) {
+      const asc = [...items]
+        .map((x, i) => ({ ...x, idx: i }))
+        .sort((a, b) => {
+          const ta = a.lastModified ? Date.parse(a.lastModified) : 0;
+          const tb = b.lastModified ? Date.parse(b.lastModified) : 0;
+          return ta - tb;
+        });
+      let prev: "on" | "off" = (asc[0]?.dbfs ?? thresholds.center) > thresholds.center ? "on" : "off";
+      for (const a of asc) {
+        const db = typeof a.dbfs === "number" ? a.dbfs : thresholds.center;
+        prev = classify(db, thresholds.T_on, thresholds.T_off, prev);
+        states[a.idx] = prev;
+      }
+    }
+
+    const out = items.map((it, i) => ({
+      ...it,
+      state: states[i] ?? undefined,
+    }));
+
+    return NextResponse.json({ items: out, thresholds: thresholds ?? undefined });
   } catch (err: any) {
     // Emit useful diagnostics to logs for production debugging
     // Safe subset only (no secrets)
