@@ -33,14 +33,16 @@ export const dynamoDbClient = new DynamoDBClient({ region, credentials: awsCrede
 export function getAwsRuntimeConfig() {
   const bucketName =
     (process.env.S3_BUCKET_NAME as string) ||
-    (process.env.OTOMONI_S3_BUCKET_NAME as string);
+    (process.env.OTOMONI_S3_BUCKET_NAME as string) ||
+    (process.env.NODE_ENV === "production" ? "recordings-kawasaki-city" : undefined as unknown as string);
   const audioTableName =
     (process.env.AUDIO_TABLE_NAME as string) ||
-    (process.env.OTOMONI_AUDIO_TABLE_NAME as string);
+    (process.env.OTOMONI_AUDIO_TABLE_NAME as string) ||
+    (process.env.NODE_ENV === "production" ? "AudioIndex" : undefined as unknown as string);
   const audioPrefix =
     process.env.S3_AUDIO_PREFIX ||
     process.env.OTOMONI_S3_AUDIO_PREFIX ||
-    "";
+    (process.env.NODE_ENV === "production" ? "phase1/kawasaki-ras-1/" : "");
   return { bucketName, audioTableName, audioPrefix };
 }
 
