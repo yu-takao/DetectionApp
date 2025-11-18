@@ -64,7 +64,7 @@ export default function Dashboard() {
   const [audioLoading, setAudioLoading] = useState<boolean>(false)
   const [uploading, setUploading] = useState(false)
   const [status, setStatus] = useState<{ equipmentId?: string; thresholds?: { T_on: number; T_off: number } } | null>(null)
-  const [cfg, setCfg] = useState<{ equipmentId?: string; qLow?: number; qHigh?: number; minMarginDb?: number; onBiasDb?: number; tolDb?: number; N?: number; maxAgeMs?: number } | null>(null)
+  const [cfg, setCfg] = useState<{ equipmentId?: string; manualOnDb?: number } | null>(null)
   const [cfgBusy, setCfgBusy] = useState(false)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -480,6 +480,7 @@ export default function Dashboard() {
                 <div className="min-w-0 flex-1 flex items-center gap-3">
                   {badge}
                   <div className="text-sm text-slate-200">{formatIsoLocal(it.lastModified)}</div>
+                  <div className="text-[11px] text-slate-400">{typeof it.dbfs === 'number' ? `${it.dbfs.toFixed(1)} dBFS` : ''}</div>
                 </div>
                 <div className="audio-dark w-[320px]">
                   <audio controls src={it.url} preload="none" />
@@ -516,7 +517,7 @@ export default function Dashboard() {
       <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
         <CardHeader className="pb-2 flex items-center justify-between">
           <CardTitle className="text-slate-100 text-base flex items-center">
-            <Settings className="mr-2 h-5 w-5 text-cyan-500" />しきい値 設定
+            <Settings className="mr-2 h-5 w-5 text-cyan-500" />しきい値 設定（音量）
           </CardTitle>
           <div className="text-xs text-slate-400">{cfg?.equipmentId ? `設備: ${cfg.equipmentId}` : ""}</div>
         </CardHeader>
@@ -538,7 +539,7 @@ export default function Dashboard() {
               onClick={async()=>{
                 try{
                   setCfgBusy(true)
-                  const r = await fetch('/api/machine/config', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(cfg||{}) })
+                  const r = await fetch('/api/machine/config', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ manualOnDb: cfg?.manualOnDb, equipmentId: cfg?.equipmentId }) })
                   if (r.ok) {
                     setCfg(await r.json())
                   }
@@ -549,16 +550,10 @@ export default function Dashboard() {
             >保存</Button>
           </div>
           <div className="grid md:grid-cols-2 gap-4">
-            <SettingNumber label="qLow (0–1)" value={cfg?.qLow} min={0} max={1} step={0.01} onChange={(v)=>setCfg(prev=>({...prev, qLow:v}))} />
-            <SettingNumber label="qHigh (0–1)" value={cfg?.qHigh} min={0} max={1} step={0.01} onChange={(v)=>setCfg(prev=>({...prev, qHigh:v}))} />
-            <SettingNumber label="minMarginDb" value={cfg?.minMarginDb} min={0} max={12} step={0.1} onChange={(v)=>setCfg(prev=>({...prev, minMarginDb:v}))} />
-            <SettingNumber label="onBiasDb" value={cfg?.onBiasDb} min={-6} max={6} step={0.1} onChange={(v)=>setCfg(prev=>({...prev, onBiasDb:v}))} />
-            <SettingNumber label="tolDb" value={cfg?.tolDb} min={0} max={3} step={0.1} onChange={(v)=>setCfg(prev=>({...prev, tolDb:v}))} />
-            <SettingNumber label="N (samples)" value={cfg?.N} min={20} max={500} step={10} onChange={(v)=>setCfg(prev=>({...prev, N:v}))} />
-            <SettingNumber label="maxAgeHours" value={cfg?.maxAgeMs ? Math.round((cfg.maxAgeMs||0)/(3600000)) : undefined} min={1} max={168} step={1} onChange={(v)=>setCfg(prev=>({...prev, maxAgeMs: v*3600000}))} />
+            <SettingNumber label="音量 (dBFS)" value={cfg?.manualOnDb} min={-120} max={0} step={0.1} onChange={(v)=>setCfg(prev=>({...prev, manualOnDb:v}))} />
           </div>
           <div className="text-xs text-slate-500 mt-3">
-            変更を保存すると次回のAPI計算から反映されます（最新リスト/ステータス）。
+            指定した音量（dBFS）以上を「稼働中」、そこから 2dB 低い境界を「停止中」として判定します（微小なブレは自動で吸収します）。
           </div>
         </CardContent>
       </Card>

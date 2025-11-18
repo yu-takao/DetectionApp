@@ -90,27 +90,34 @@ export async function GET() {
     const equipmentId = defaultEquip || allForThresh[0]?.equipmentId;
     const cand = allForThresh.filter((x) => !equipmentId || x.equipmentId === equipmentId).slice(0, 200);
     let thresholds: { T_on: number; T_off: number; center: number; margin: number } | null = null;
-    if (cand.length >= 20) {
-      // Load overrides if present
+
+    // Manual override first (single volume threshold)
+    if (equipmentId) {
+      try {
+        const cfgItem = await ddb.send(new GetItemCommand({
+          TableName: awsConfig.audioTableName,
+          Key: { pk: { S: "CONFIG" }, sk: { S: `EQUIP#${equipmentId}` } }
+        }));
+        const num = (n?: { N?: string }) => (n?.N ? Number(n.N) : undefined);
+        const manualOnDb = num(cfgItem.Item?.manualOnDb);
+        if (typeof manualOnDb === "number" && isFinite(manualOnDb)) {
+          const hysDb = Number(process.env.THRESH_HYS_DB || 2);
+          thresholds = {
+            T_on: manualOnDb,
+            T_off: manualOnDb - hysDb,
+            center: manualOnDb - hysDb / 2,
+            margin: hysDb,
+          };
+        }
+      } catch {}
+    }
+
+    // If no manual override, compute from percentiles when enough samples
+    if (!thresholds && cand.length >= 20) {
       let qLow = Number(process.env.THRESH_Q_LOW || 0.35);
       let qHigh = Number(process.env.THRESH_Q_HIGH || 0.75);
       let minMarginDb = Number(process.env.THRESH_MARGIN_MIN_DB || 3);
       let onBiasDb = Number(process.env.THRESH_ON_BIAS_DB || 0.5);
-      if (equipmentId) {
-        try {
-          const cfgItem = await ddb.send(new GetItemCommand({
-            TableName: awsConfig.audioTableName,
-            Key: { pk: { S: "CONFIG" }, sk: { S: `EQUIP#${equipmentId}` } }
-          }));
-          const num = (n?: { N?: string }) => (n?.N ? Number(n.N) : undefined);
-          if (cfgItem.Item) {
-            qLow = num(cfgItem.Item.qLow) ?? qLow;
-            qHigh = num(cfgItem.Item.qHigh) ?? qHigh;
-            minMarginDb = num(cfgItem.Item.minMarginDb) ?? minMarginDb;
-            onBiasDb = num(cfgItem.Item.onBiasDb) ?? onBiasDb;
-          }
-        } catch {}
-      }
       const dbs = [...cand.map((x) => x.dbfs)].sort((a, b) => a - b);
       const pL = computePercentile(dbs, qLow);
       const pH = computePercentile(dbs, qHigh);

@@ -41,6 +41,7 @@ export async function GET(request: Request) {
       tolDb: num(item.tolDb) ?? d.tolDb,
       N: num(item.N) ?? d.N,
       maxAgeMs: num(item.maxAgeMs) ?? d.maxAgeMs,
+      manualOnDb: num(item.manualOnDb),
       equipmentId,
       updatedAt: item.updatedAt?.S,
     }
@@ -65,6 +66,9 @@ export async function POST(request: Request) {
   const tolDb = toNum(payload.tolDb, d.tolDb)
   const N = toNum(payload.N, d.N)
   const maxAgeMs = toNum(payload.maxAgeMs, d.maxAgeMs)
+  const manualOnDb = typeof payload.manualOnDb === "number" && isFinite(payload.manualOnDb)
+    ? Number(payload.manualOnDb)
+    : (typeof payload.volumeDb === "number" && isFinite(payload.volumeDb) ? Number(payload.volumeDb) : undefined)
 
   const now = new Date().toISOString()
   await ddb.send(new PutItemCommand({
@@ -79,10 +83,11 @@ export async function POST(request: Request) {
       tolDb: { N: String(tolDb) },
       N: { N: String(N) },
       maxAgeMs: { N: String(maxAgeMs) },
+      ...(typeof manualOnDb === "number" ? { manualOnDb: { N: String(manualOnDb) } } : {}),
       updatedAt: { S: now },
     }
   }))
-  return NextResponse.json({ ok: true, equipmentId, updatedAt: now, qLow, qHigh, minMarginDb, onBiasDb, tolDb, N, maxAgeMs })
+  return NextResponse.json({ ok: true, equipmentId, updatedAt: now, qLow, qHigh, minMarginDb, onBiasDb, tolDb, N, maxAgeMs, manualOnDb })
 }
 
 

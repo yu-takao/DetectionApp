@@ -109,14 +109,37 @@ export async function GET(request: Request) {
     })
   }
 
-  const dbs = [...filtered.map((x) => x.dbfs)].sort((a, b) => a - b)
-  const pL = computePercentile(dbs, qLow)
-  const pH = computePercentile(dbs, qHigh)
-  const gap = pH - pL
-  const center = (pL + pH) / 2
-  const margin = Math.max(minMarginDb, 0.2 * Math.max(0, gap))
-  const T_on = center + margin / 2 + onBiasDb
-  const T_off = center - margin / 2
+  // Manual override check (single volume threshold)
+  let manualOnDb: number | undefined
+  try {
+    const cfgItem = await ddb.send(new GetItemCommand({
+      TableName: cfg.audioTableName,
+      Key: { pk: { S: "CONFIG" }, sk: { S: `EQUIP#${equipmentId}` } }
+    }))
+    const num = (n?: { N?: string }) => (n?.N ? Number(n.N) : undefined)
+    manualOnDb = num(cfgItem.Item?.manualOnDb)
+  } catch {}
+
+  let center: number
+  let margin: number
+  let T_on: number
+  let T_off: number
+  if (typeof manualOnDb === "number" && isFinite(manualOnDb)) {
+    const hysDb = Number(process.env.THRESH_HYS_DB || 2) // 固定ヒステリシス幅
+    T_on = manualOnDb
+    T_off = manualOnDb - hysDb
+    center = manualOnDb - hysDb / 2
+    margin = hysDb
+  } else {
+    const dbs = [...filtered.map((x) => x.dbfs)].sort((a, b) => a - b)
+    const pL = computePercentile(dbs, qLow)
+    const pH = computePercentile(dbs, qHigh)
+    const gap = pH - pL
+    center = (pL + pH) / 2
+    margin = Math.max(minMarginDb, 0.2 * Math.max(0, gap))
+    T_on = center + margin / 2 + onBiasDb
+    T_off = center - margin / 2
+  }
 
   // 最新サンプルでの状態（簡易、ヒステリシスは prev=直近推定で代用）
   const latest = filtered[0] // 降順のはず
