@@ -18,6 +18,80 @@ function classify(db: number, T_on: number, T_off: number, prev: "on" | "off"): 
   return prev;
 }
 
+async function streamToBuffer(stream: any): Promise<Buffer> {
+  return await new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    // Node stream
+    stream?.on?.("data", (c: Buffer) => chunks.push(c));
+    stream?.on?.("error", reject);
+    stream?.on?.("end", () => resolve(Buffer.concat(chunks)));
+    // Web stream (in some runtimes)
+    if (typeof stream === "object" && typeof stream.getReader === "function") {
+      (async () => {
+        try {
+          const reader = stream.getReader();
+          const acc: Buffer[] = [];
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            acc.push(Buffer.from(value));
+          }
+          resolve(Buffer.concat(acc));
+        } catch (e) {
+          reject(e);
+        }
+      })();
+    }
+  });
+}
+
+function parseWavHeader(buf: Buffer) {
+  if (buf.length < 44) return null;
+  if (buf.toString("ascii", 0, 4) !== "RIFF") return null;
+  if (buf.toString("ascii", 8, 12) !== "WAVE") return null;
+  let offset = 12;
+  let fmt: { audioFormat: number; numChannels: number; sampleRate: number; bitsPerSample: number } | null = null;
+  let dataOffset: number | null = null;
+  while (offset + 8 <= buf.length) {
+    const id = buf.toString("ascii", offset, offset + 4);
+    const size = buf.readUInt32LE(offset + 4);
+    const chunkStart = offset + 8;
+    if (id === "fmt ") {
+      const audioFormat = buf.readUInt16LE(chunkStart);
+      const numChannels = buf.readUInt16LE(chunkStart + 2);
+      const sampleRate = buf.readUInt32LE(chunkStart + 4);
+      const bitsPerSample = buf.readUInt16LE(chunkStart + 14);
+      fmt = { audioFormat, numChannels, sampleRate, bitsPerSample };
+    } else if (id === "data") {
+      dataOffset = chunkStart;
+      break;
+    }
+    offset = chunkStart + size;
+  }
+  if (!fmt || dataOffset == null) return null;
+  return { sampleRate: fmt.sampleRate, channels: fmt.numChannels, bitsPerSample: fmt.bitsPerSample, dataOffset };
+}
+
+function computeDbfsFromPcm16(buf: Buffer, channels: number) {
+  const bytesPerSample = 2;
+  const frameSize = bytesPerSample * channels;
+  let sumSq = 0;
+  let count = 0;
+  for (let i = 0; i + frameSize <= buf.length; i += frameSize) {
+    let acc = 0;
+    for (let ch = 0; ch < channels; ch++) {
+      const s = buf.readInt16LE(i + ch * bytesPerSample);
+      acc += s / 32768;
+    }
+    const v = acc / channels;
+    sumSq += v * v;
+    count++;
+  }
+  const rms = Math.sqrt(sumSq / Math.max(1, count));
+  const dbfs = 20 * Math.log10(Math.max(rms, 1e-9));
+  return { rms, dbfs };
+}
+
 export async function GET() {
   try {
     const awsConfig = getAwsRuntimeConfig();
@@ -135,8 +209,31 @@ export async function GET() {
           const key = it.key?.S as string;
           const size = it.size?.N ? Number(it.size.N) : undefined;
           const lastModified = it.lastModified?.S as string | undefined;
-          const dbfs = it.dbfs?.N ? Number(it.dbfs.N) : undefined;
+          let dbfs = it.dbfs?.N ? Number(it.dbfs.N) : undefined;
           const equipmentId = it.equipmentId?.S as string | undefined;
+
+          // Fallback: compute dbfs on the fly for items without dbfs
+          if (typeof dbfs !== "number" && bucket && key) {
+            try {
+              const head = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: "bytes=0-65535" }));
+              const headBuf = await streamToBuffer(head.Body as any);
+              const wav = parseWavHeader(headBuf);
+              if (wav && wav.bitsPerSample === 16) {
+                const seconds = 2;
+                const bytesPerSample = wav.bitsPerSample / 8;
+                const frameSize = bytesPerSample * wav.channels;
+                const samplesNeeded = wav.sampleRate * seconds;
+                const bytesNeeded = samplesNeeded * frameSize;
+                const start = wav.dataOffset;
+                const end = start + bytesNeeded - 1;
+                const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: `bytes=${start}-${end}` }));
+                const buf = await streamToBuffer(obj.Body as any);
+                const { dbfs: d } = computeDbfsFromPcm16(buf, wav.channels);
+                dbfs = d;
+              }
+            } catch {}
+          }
+
           const signed = await getSignedUrl(
             s3,
             new GetObjectCommand({ Bucket: bucket, Key: key }),
