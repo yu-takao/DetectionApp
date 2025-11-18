@@ -69,6 +69,23 @@ export default function Dashboard() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
+  // 設定画面に入ったら現在のCONFIGを自動取得
+  useEffect(() => {
+    if (activeSection !== "settings") return
+    let aborted = false
+    ;(async () => {
+      try {
+        setCfgBusy(true)
+        const r = await fetch("/api/machine/config", { cache: "no-store" })
+        if (!aborted && r.ok) {
+          setCfg(await r.json())
+        }
+      } finally {
+        setCfgBusy(false)
+      }
+    })()
+    return () => { aborted = true }
+  }, [activeSection])
   // Simulate data loading
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -522,6 +539,21 @@ export default function Dashboard() {
           <div className="text-xs text-slate-400">{cfg?.equipmentId ? `設備: ${cfg.equipmentId}` : ""}</div>
         </CardHeader>
         <CardContent>
+          {/* 現在適用中の設定表示 */}
+          <div className="mb-3 p-3 rounded-lg border border-slate-700/50 bg-slate-800/40">
+            <div className="text-xs text-slate-400 mb-1">現在の設定</div>
+            <div className="text-sm text-slate-200">
+              {typeof cfg?.manualOnDb === 'number' && isFinite(cfg.manualOnDb)
+                ? <>手動 音量: {cfg.manualOnDb.toFixed(1)} dBFS</>
+                : <>自動計算（統計ベース）</>}
+            </div>
+            {status?.thresholds && (
+              <div className="text-xs text-slate-400 mt-1">
+                適用中 T_on: {status.thresholds.T_on.toFixed(1)} dBFS / T_off: {status.thresholds.T_off.toFixed(1)} dBFS
+              </div>
+            )}
+          </div>
+
           <div className="flex gap-2 mb-3">
             <Button
               variant="outline"
