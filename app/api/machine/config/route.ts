@@ -61,6 +61,10 @@ export async function POST(request: Request) {
   const ddb = getDynamoDbClient()
   const d = defaults()
 
+  if (!cfg.audioTableName) {
+    return NextResponse.json({ ok: false, error: "AUDIO_TABLE_NAME is not set" }, { status: 500 })
+  }
+
   const equipmentId = (payload.equipmentId as string) || deriveEquipFromPrefix(cfg.audioPrefix) || "kawasaki-ras-1"
   const toNum = (v: any, fallback: number) => (typeof v === "number" && isFinite(v) ? v : fallback)
 
@@ -76,23 +80,30 @@ export async function POST(request: Request) {
     : (typeof payload.volumeDb === "number" && isFinite(payload.volumeDb) ? Number(payload.volumeDb) : undefined)
 
   const now = new Date().toISOString()
-  await ddb.send(new PutItemCommand({
-    TableName: cfg.audioTableName,
-    Item: {
-      pk: { S: "CONFIG" },
-      sk: { S: `EQUIP#${equipmentId}` },
-      qLow: { N: String(qLow) },
-      qHigh: { N: String(qHigh) },
-      minMarginDb: { N: String(minMarginDb) },
-      onBiasDb: { N: String(onBiasDb) },
-      tolDb: { N: String(tolDb) },
-      N: { N: String(N) },
-      maxAgeMs: { N: String(maxAgeMs) },
-      ...(typeof manualOnDb === "number" ? { manualOnDb: { N: String(manualOnDb) } } : {}),
-      updatedAt: { S: now },
-    }
-  }))
-  return NextResponse.json({ ok: true, equipmentId, updatedAt: now, qLow, qHigh, minMarginDb, onBiasDb, tolDb, N, maxAgeMs, manualOnDb })
+  try {
+    await ddb.send(new PutItemCommand({
+      TableName: cfg.audioTableName,
+      Item: {
+        pk: { S: "CONFIG" },
+        sk: { S: `EQUIP#${equipmentId}` },
+        qLow: { N: String(qLow) },
+        qHigh: { N: String(qHigh) },
+        minMarginDb: { N: String(minMarginDb) },
+        onBiasDb: { N: String(onBiasDb) },
+        tolDb: { N: String(tolDb) },
+        N: { N: String(N) },
+        maxAgeMs: { N: String(maxAgeMs) },
+        ...(typeof manualOnDb === "number" ? { manualOnDb: { N: String(manualOnDb) } } : {}),
+        updatedAt: { S: now },
+      }
+    }))
+    return NextResponse.json({ ok: true, equipmentId, updatedAt: now, qLow, qHigh, minMarginDb, onBiasDb, tolDb, N, maxAgeMs, manualOnDb })
+  } catch (e: any) {
+    const name = e?.name
+    const message = e?.message || "failed to save CONFIG"
+    // 代表的な権限不足は 500 のまま詳細を返す
+    return NextResponse.json({ ok: false, error: message, code: name }, { status: 500 })
+  }
 }
 
 
