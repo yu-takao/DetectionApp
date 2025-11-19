@@ -28,26 +28,31 @@ export async function GET(request: Request) {
 
   let equipmentId = searchParams.get("equipmentId") || deriveEquipFromPrefix(cfg.audioPrefix) || "kawasaki-ras-1"
   const key = { pk: { S: "CONFIG" }, sk: { S: `EQUIP#${equipmentId}` } }
-  const res = await ddb.send(new GetItemCommand({ TableName: cfg.audioTableName, Key: key }))
   const d = defaults()
-  const item = res.Item
-  if (item) {
-    const num = (n?: { N?: string }) => (n?.N ? Number(n.N) : undefined)
-    const merged = {
-      qLow: num(item.qLow) ?? d.qLow,
-      qHigh: num(item.qHigh) ?? d.qHigh,
-      minMarginDb: num(item.minMarginDb) ?? d.minMarginDb,
-      onBiasDb: num(item.onBiasDb) ?? d.onBiasDb,
-      tolDb: num(item.tolDb) ?? d.tolDb,
-      N: num(item.N) ?? d.N,
-      maxAgeMs: num(item.maxAgeMs) ?? d.maxAgeMs,
-      manualOnDb: num(item.manualOnDb),
-      equipmentId,
-      updatedAt: item.updatedAt?.S,
+  try {
+    const res = await ddb.send(new GetItemCommand({ TableName: cfg.audioTableName, Key: key }))
+    const item = res.Item
+    if (item) {
+      const num = (n?: { N?: string }) => (n?.N ? Number(n.N) : undefined)
+      const merged = {
+        qLow: num(item.qLow) ?? d.qLow,
+        qHigh: num(item.qHigh) ?? d.qHigh,
+        minMarginDb: num(item.minMarginDb) ?? d.minMarginDb,
+        onBiasDb: num(item.onBiasDb) ?? d.onBiasDb,
+        tolDb: num(item.tolDb) ?? d.tolDb,
+        N: num(item.N) ?? d.N,
+        maxAgeMs: num(item.maxAgeMs) ?? d.maxAgeMs,
+        manualOnDb: num(item.manualOnDb),
+        equipmentId,
+        updatedAt: item.updatedAt?.S,
+      }
+      return NextResponse.json(merged)
     }
-    return NextResponse.json(merged)
+    return NextResponse.json({ ...d, equipmentId })
+  } catch (e: any) {
+    // フォールバック: DDBにアクセスできない場合でも既定値を返す
+    return NextResponse.json({ ...d, equipmentId, warning: "CONFIG unavailable, using defaults" })
   }
-  return NextResponse.json({ ...d, equipmentId })
 }
 
 export async function POST(request: Request) {
