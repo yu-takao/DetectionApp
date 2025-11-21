@@ -66,12 +66,16 @@ export default function Dashboard() {
   const [status, setStatus] = useState<{ equipmentId?: string; thresholds?: { T_on: number; T_off: number } } | null>(null)
   const [cfg, setCfg] = useState<{ equipmentId?: string; manualOnDb?: number } | null>(null)
   const [cfgBusy, setCfgBusy] = useState(false)
+  const [settingsAuthed, setSettingsAuthed] = useState(false)
+  const [settingsPw, setSettingsPw] = useState("")
+  const [settingsPwError, setSettingsPwError] = useState<string | null>(null)
+  const [showDbfs, setShowDbfs] = useState<boolean>(true)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   // 設定画面に入ったら現在のCONFIGを自動取得
   useEffect(() => {
-    if (activeSection !== "settings") return
+    if (activeSection !== "settings" || !settingsAuthed) return
     let aborted = false
     ;(async () => {
       try {
@@ -85,9 +89,15 @@ export default function Dashboard() {
       }
     })()
     return () => { aborted = true }
-  }, [activeSection])
+  }, [activeSection, settingsAuthed])
   // Simulate data loading
   useEffect(() => {
+    // dBFS表示設定の読み込み
+    try {
+      const v = typeof window !== 'undefined' ? window.localStorage.getItem('showDbfs') : null
+      if (v === '0') setShowDbfs(false)
+      if (v === '1') setShowDbfs(true)
+    } catch {}
     const timer = setTimeout(() => {
       setIsLoading(false)
     }, 2000)
@@ -357,7 +367,7 @@ export default function Dashboard() {
           <NavItem icon={Command} label="ダッシュボード" active={activeSection==='dashboard'} onClick={() => setActiveSection('dashboard')} />
           <NavItem icon={Ear} label="音確認" active={activeSection==='sound'} onClick={() => setActiveSection('sound')} />
           <NavItem icon={MessageSquare} label="AI アシスタント" active={activeSection==='ai'} onClick={() => setActiveSection('ai')} />
-          <NavItem icon={Settings} label="しきい値 設定" active={activeSection==='settings'} onClick={() => setActiveSection('settings')} />
+          <NavItem icon={Settings} label="設定" active={activeSection==='settings'} onClick={() => setActiveSection('settings')} />
         </nav>
       </CardContent>
     </Card>
@@ -457,25 +467,10 @@ export default function Dashboard() {
 
     {activeSection === 'sound' && (
       <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm overflow-hidden">
-        <CardHeader className="pb-2 flex items-center justify-between">
+        <CardHeader className="pb-2 flex items-center">
           <CardTitle className="text-slate-100 text-base flex items-center">
-            <Ear className="mr-2 h-5 w-5 text-cyan-500" />音確認（最新10件）
+            <Ear className="mr-2 h-5 w-5 text-cyan-500" />音確認
           </CardTitle>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-slate-400"
-            onClick={async()=>{
-              try {
-                setAudioLoading(true)
-                const res = await fetch("/api/audio/latest", { cache: "no-store" })
-                if(res.ok){ const d = await res.json(); setAudioItems(d.items||[]) }
-              } finally { setAudioLoading(false) }
-            }}
-            disabled={audioLoading}
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
@@ -488,16 +483,24 @@ export default function Dashboard() {
               const state = serverState ?? classify(it.dbfs)
               const badge =
                 state === "on"
-                  ? <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/30 text-xs">稼働中</Badge>
+                  ? <Badge variant="outline" className="bg-slate-800/50 text-cyan-400 border-cyan-500/50 text-xs flex items-center justify-center min-w-[88px]">
+                      <div className="h-1.5 w-1.5 rounded-full bg-cyan-500 mr-1 animate-pulse"></div>
+                      Running
+                    </Badge>
                   : state === "off"
-                  ? <Badge variant="outline" className="bg-slate-700/20 text-slate-300 border-slate-600/30 text-xs">停止中</Badge>
+                  ? <Badge variant="outline" className="bg-slate-700/20 text-slate-300 border-slate-600/30 text-xs flex items-center justify-center min-w-[88px]">
+                      <div className="h-1.5 w-1.5 rounded-full bg-slate-500 mr-1"></div>
+                      Stop
+                    </Badge>
                   : <Badge variant="outline" className="bg-slate-800/40 text-slate-400 border-slate-600/40 text-xs">判定中</Badge>
               return (
               <div key={`${it.key}-${idx}`} className="flex items-center justify-between gap-4 bg-slate-800/50 rounded-lg border border-slate-700/50 p-3">
                 <div className="min-w-0 flex-1 flex items-center gap-3">
                   {badge}
                   <div className="text-sm text-slate-200">{formatIsoLocal(it.lastModified)}</div>
-                  <div className="text-[11px] text-slate-400">{typeof it.dbfs === 'number' ? `${it.dbfs.toFixed(1)} dBFS` : ''}</div>
+                  {showDbfs && (
+                    <div className="text-[11px] text-slate-400">{typeof it.dbfs === 'number' ? `${it.dbfs.toFixed(1)} dBFS` : ''}</div>
+                  )}
                 </div>
                 <div className="audio-dark w-[320px]">
                   <audio controls src={it.url} preload="none" />
@@ -531,64 +534,112 @@ export default function Dashboard() {
     )}
 
     {activeSection === 'settings' && (
-      <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
-        <CardHeader className="pb-2 flex items-center justify-between">
-          <CardTitle className="text-slate-100 text-base flex items-center">
-            <Settings className="mr-2 h-5 w-5 text-cyan-500" />しきい値 設定（音量）
-          </CardTitle>
-          <div className="text-xs text-slate-400">{cfg?.equipmentId ? `設備: ${cfg.equipmentId}` : ""}</div>
-        </CardHeader>
-        <CardContent>
-          {/* 現在適用中の設定表示 */}
-          <div className="mb-3 p-3 rounded-lg border border-slate-700/50 bg-slate-800/40">
-            <div className="text-xs text-slate-400 mb-1">現在の設定</div>
-            <div className="text-sm text-slate-200">
-              {typeof cfg?.manualOnDb === 'number' && isFinite(cfg.manualOnDb)
-                ? <>手動 音量: {cfg.manualOnDb.toFixed(1)} dBFS</>
-                : <>自動計算（統計ベース）</>}
-            </div>
-            {status?.thresholds && (
-              <div className="text-xs text-slate-400 mt-1">
-                適用中 T_on: {status.thresholds.T_on.toFixed(1)} dBFS / T_off: {status.thresholds.T_off.toFixed(1)} dBFS
+      settingsAuthed ? (
+        <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
+          <CardHeader className="pb-2 flex items-center justify-between">
+            <CardTitle className="text-slate-100 text-base flex items-center">
+              <Settings className="mr-2 h-5 w-5 text-cyan-500" />設定
+            </CardTitle>
+            <div className="text-xs text-slate-400">{cfg?.equipmentId ? `設備: ${cfg.equipmentId}` : ""}</div>
+          </CardHeader>
+          <CardContent>
+            {/* 現在適用中の設定表示 */}
+            <div className="mb-3 p-3 rounded-lg border border-slate-700/50 bg-slate-800/40">
+              <div className="text-xs text-slate-400 mb-1">現在の設定</div>
+              <div className="text-sm text-slate-200">
+                {typeof cfg?.manualOnDb === 'number' && isFinite(cfg.manualOnDb)
+                  ? <>手動 音量: {cfg.manualOnDb.toFixed(1)} dBFS</>
+                  : <>自動計算（統計ベース）</>}
               </div>
-            )}
-          </div>
+              {status?.thresholds && (
+                <div className="text-xs text-slate-400 mt-1">
+                  適用中 T_on: {status.thresholds.T_on.toFixed(1)} dBFS / T_off: {status.thresholds.T_off.toFixed(1)} dBFS
+                </div>
+              )}
+            </div>
 
-          <div className="flex gap-2 mb-3">
-            <Button
-              variant="outline"
-              onClick={async()=>{
-                try{
-                  setCfgBusy(true)
-                  const r = await fetch('/api/machine/config', { cache: 'no-store' })
-                  if (r.ok) setCfg(await r.json())
-                } finally { setCfgBusy(false) }
-              }}
-              disabled={cfgBusy}
-              className="border-slate-600 text-slate-200"
-            >読み込み</Button>
-            <Button
-              onClick={async()=>{
-                try{
-                  setCfgBusy(true)
-                  const r = await fetch('/api/machine/config', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ manualOnDb: cfg?.manualOnDb, equipmentId: cfg?.equipmentId }) })
-                  if (r.ok) {
-                    setCfg(await r.json())
+            <div className="flex gap-2 mb-3">
+              <Button
+                variant="outline"
+                onClick={async()=>{
+                  try{
+                    setCfgBusy(true)
+                    const r = await fetch('/api/machine/config', { cache: 'no-store' })
+                    if (r.ok) setCfg(await r.json())
+                  } finally { setCfgBusy(false) }
+                }}
+                disabled={cfgBusy}
+                className="border-slate-600 text-slate-200"
+              >読み込み</Button>
+              <Button
+                onClick={async()=>{
+                  try{
+                    setCfgBusy(true)
+                    const r = await fetch('/api/machine/config', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ manualOnDb: cfg?.manualOnDb, equipmentId: cfg?.equipmentId }) })
+                    if (r.ok) {
+                      setCfg(await r.json())
+                    }
+                  } finally { setCfgBusy(false) }
+                }}
+                disabled={cfgBusy}
+                className="bg-cyan-600 hover:bg-cyan-700"
+              >保存</Button>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              <SettingNumber label="音量 (dBFS)" value={cfg?.manualOnDb} min={-120} max={0} step={0.1} onChange={(v)=>setCfg(prev=>({...prev, manualOnDb:v}))} />
+              <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-3 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-slate-400 mb-1">音確認にdBFSを表示</div>
+                  <div className="text-[10px] text-slate-500">ONで各音声項目にdBFSを表示します</div>
+                </div>
+                <Switch
+                  checked={showDbfs}
+                  onCheckedChange={(v:boolean)=>{ setShowDbfs(v); try{ window.localStorage.setItem('showDbfs', v ? '1' : '0') } catch {} }}
+                />
+              </div>
+            </div>
+            <div className="text-xs text-slate-500 mt-3">
+              指定した音量（dBFS）以上を「稼働中」、そこから 2dB 低い境界を「停止中」として判定します（微小なブレは自動で吸収します）。
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-slate-100 text-base flex items-center">
+              <Settings className="mr-2 h-5 w-5 text-cyan-500" />設定
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 max-w-sm">
+              <div className="text-sm text-slate-400">パスワードを入力してください。</div>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (settingsPw === 'admin') {
+                    setSettingsPwError(null)
+                    setSettingsAuthed(true)
+                    setSettingsPw("")
+                  } else {
+                    setSettingsPwError("パスワードが正しくありません。")
                   }
-                } finally { setCfgBusy(false) }
-              }}
-              disabled={cfgBusy}
-              className="bg-cyan-600 hover:bg-cyan-700"
-            >保存</Button>
-          </div>
-          <div className="grid md:grid-cols-2 gap-4">
-            <SettingNumber label="音量 (dBFS)" value={cfg?.manualOnDb} min={-120} max={0} step={0.1} onChange={(v)=>setCfg(prev=>({...prev, manualOnDb:v}))} />
-          </div>
-          <div className="text-xs text-slate-500 mt-3">
-            指定した音量（dBFS）以上を「稼働中」、そこから 2dB 低い境界を「停止中」として判定します（微小なブレは自動で吸収します）。
-          </div>
-        </CardContent>
-      </Card>
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  type="password"
+                  value={settingsPw}
+                  onChange={(e)=>setSettingsPw(e.target.value)}
+                  placeholder="パスワード"
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                />
+                <Button type="submit" className="bg-cyan-600 hover:bg-cyan-700">送信</Button>
+              </form>
+              {settingsPwError && <div className="text-xs text-red-400">{settingsPwError}</div>}
+            </div>
+          </CardContent>
+        </Card>
+      )
     )}
     
   </div>
