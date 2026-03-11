@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(npx tsc:*)",
+      "Bash(aws s3 ls:*)",
+      "Bash(aws sso login:*)",
+      "Bash(aws iam list-roles:*)",
+      "Bash(aws iam get-role:*)",
+      "Bash(aws iam list-attached-role-policies:*)",
+      "Bash(zip:*)",
+      "Bash(aws lambda get-function:*)",
+      "Bash(aws iam create-role:*)",
+      "Bash(aws iam attach-role-policy:*)",
+      "Bash(aws lambda create-function:*)",
+      "Bash(aws lambda add-permission:*)",
+      "Bash(aws iot create-topic-rule:*)",
+      "Bash(aws iot get-topic-rule:*)",
+      "Bash(aws s3 cp:*)",
+      "Bash(aws greengrassv2 create-component-version:*)",
+      "Bash(aws greengrassv2 list-effective-deployments:*)",
+      "Bash(aws greengrassv2 get-deployment:*)",
+      "Bash(aws greengrassv2 create-deployment:*)"
+    ]
+  }
+}

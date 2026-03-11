@@ -1,1177 +1,522 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import {
   Activity,
   AlertCircle,
-  BarChart3,
-  Bell,
-  CircleOff,
+  Brain,
+  Check as CheckIcon,
+  CheckCircle2,
   Command,
-  Cpu,
-  Server,
-  Download,
-  Globe,
-  HardDrive,
-  Hexagon,
-  LineChart,
-  Lock,
-  type LucideIcon,
-  type LucideProps,
-  MessageSquare,
-  Speaker,
-  Mic,
   Ear,
-  Timer,
-  Moon,
-  Radio,
-  RefreshCw,
-  Search,
+  Hexagon,
+  Loader2,
+  LogOut,
+  PanelLeftClose,
+  Save,
+  Server,
   Settings,
-  Shield,
-  Sun,
-  Terminal,
-  Wifi,
-  Zap,
+  User,
 } from "lucide-react"
 
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Badge } from "@/components/ui/badge"
-import { Slider } from "@/components/ui/slider"
-import { Switch } from "@/components/ui/switch"
-import { Label } from "@/components/ui/label"
-import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts"
+// ─── Sidebar ────────────────────────────────────────────────
+
+interface NavItem {
+  id: string
+  label: string
+  icon: ReactNode
+}
+
+function Sidebar({
+  items,
+  activeItem,
+  onItemChange,
+  collapsed,
+  onToggleCollapse,
+}: {
+  items: NavItem[]
+  activeItem: string
+  onItemChange: (id: string) => void
+  collapsed: boolean
+  onToggleCollapse: () => void
+}) {
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null)
+  const [showText, setShowText] = useState(!collapsed)
+
+  useEffect(() => {
+    if (collapsed) {
+      setShowText(false)
+    } else {
+      const timer = setTimeout(() => setShowText(true), 300)
+      return () => clearTimeout(timer)
+    }
+  }, [collapsed])
+
+  return (
+    <aside
+      onClick={(e) => {
+        const target = e.target as HTMLElement
+        if (!target.closest("button, a")) onToggleCollapse()
+      }}
+      className={`fixed left-5 top-5 bottom-5 bg-zinc-900 flex flex-col z-50 transition-all duration-300 cursor-pointer ${
+        collapsed ? "w-[57px]" : "w-44"
+      }`}
+      style={{
+        boxShadow: "6px 0 32px rgba(0,0,0,0.18), 2px 0 12px rgba(0,0,0,0.12)",
+        borderRadius: "16px",
+      }}
+    >
+      {/* Logo */}
+      <div className={`flex items-center ${collapsed ? "justify-center pt-5 pb-4" : "px-4 pt-5 pb-4"}`}>
+        <button
+          onClick={collapsed ? onToggleCollapse : undefined}
+          className={`p-1.5 rounded-lg bg-zinc-900 flex-shrink-0 transition-opacity ${collapsed ? "hover:opacity-80 cursor-pointer" : ""}`}
+        >
+          <Hexagon className="text-violet-400" style={{ width: 22, height: 22 }} />
+        </button>
+        {showText && (
+          <>
+            <h1 className="text-xs font-bold text-white ml-2.5 whitespace-nowrap">OtoMoni</h1>
+            <button
+              onClick={onToggleCollapse}
+              className="ml-auto p-1.5 rounded-full bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+            >
+              <PanelLeftClose style={{ width: 13, height: 13 }} />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Nav */}
+      <nav className={`flex-1 space-y-2 ${collapsed ? "px-2" : "px-2.5"} mt-2`}>
+        {items.map((item) => (
+          <div key={item.id} className="relative">
+            <button
+              onClick={() => onItemChange(item.id)}
+              onMouseEnter={() => setHoveredItem(item.id)}
+              onMouseLeave={() => setHoveredItem(null)}
+              className={`
+                w-full flex items-center rounded-lg font-medium transition-all
+                ${collapsed ? "justify-center p-2" : "gap-3.5 px-2.5 py-2 text-left"}
+                ${activeItem === item.id
+                  ? "bg-zinc-800 text-white"
+                  : "text-zinc-400 hover:text-white hover:bg-zinc-800/60"
+                }
+              `}
+              style={{ fontSize: "13px" }}
+            >
+              <span className={`flex-shrink-0 ${activeItem === item.id ? "text-zinc-300" : ""}`} style={{ width: 16, height: 16 }}>
+                {item.icon}
+              </span>
+              {showText && item.label}
+            </button>
+            {collapsed && hoveredItem === item.id && (
+              <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2.5 py-1.5 bg-zinc-800 text-white text-xs font-medium rounded-lg whitespace-nowrap shadow-lg z-50">
+                {item.label}
+              </div>
+            )}
+          </div>
+        ))}
+      </nav>
+
+      {/* User */}
+      <div className={`border-t border-zinc-800 ${collapsed ? "p-2 pb-4" : "p-2.5 pb-4"}`}>
+        <div className={collapsed ? "space-y-1" : "space-y-2"}>
+          {!showText ? (
+            <div className="flex justify-center py-2">
+              <div className="p-1.5 rounded-full bg-zinc-700">
+                <User className="w-3.5 h-3.5 text-zinc-300" />
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2.5 px-3 py-2 bg-zinc-800/50 rounded-lg">
+              <div className="p-1 rounded-full bg-zinc-700">
+                <User className="w-3 h-3 text-zinc-300" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-medium text-white truncate">管理者</p>
+                <p className="text-[9px] text-zinc-500 truncate">kawasaki-city</p>
+              </div>
+            </div>
+          )}
+          <button
+            className={`w-full flex items-center justify-center rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all duration-200 font-medium ${
+              collapsed ? "p-2.5" : "gap-1.5 px-3 py-2"
+            }`}
+            style={collapsed ? undefined : { fontSize: "13px" }}
+          >
+            <LogOut className="w-3 h-3" />
+            {showText && "サインアウト"}
+          </button>
+        </div>
+      </div>
+    </aside>
+  )
+}
+
+// ─── Main Dashboard ─────────────────────────────────────────
 
 export default function Dashboard() {
-  const [theme, setTheme] = useState<"dark" | "light">("dark")
-  
-
-  
   const [devicesStatus, setDevicesStatus] = useState([
-    { name: "センサー 1", online: true },
+    { name: "kawasaki-ras-1", online: true },
   ])
-  
-  const [currentTime, setCurrentTime] = useState<Date | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [activeSection, setActiveSection] = useState<"dashboard" | "ai" | "sound" | "settings">("dashboard")
-  type AudioItem = { key: string; url: string; size?: number; lastModified?: string; dbfs?: number; equipmentId?: string }
-  const [audioItems, setAudioItems] = useState<AudioItem[]>([])
-  const [audioLoading, setAudioLoading] = useState<boolean>(false)
-  const [uploading, setUploading] = useState(false)
-  const [status, setStatus] = useState<{ equipmentId?: string; thresholds?: { T_on: number; T_off: number } } | null>(null)
-  const [cfg, setCfg] = useState<{ equipmentId?: string; manualOnDb?: number } | null>(null)
-  const [cfgBusy, setCfgBusy] = useState(false)
-  const [settingsAuthed, setSettingsAuthed] = useState(false)
-  const [settingsPw, setSettingsPw] = useState("")
-  const [settingsPwError, setSettingsPwError] = useState<string | null>(null)
-  const [showDbfs, setShowDbfs] = useState<boolean>(true)
 
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [activeSection, setActiveSection] = useState<"dashboard" | "sound" | "settings">("dashboard")
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
 
-  // 設定画面に入ったら現在のCONFIGを自動取得
-  useEffect(() => {
-    if (activeSection !== "settings" || !settingsAuthed) return
-    let aborted = false
-    ;(async () => {
-      try {
-        setCfgBusy(true)
-        const r = await fetch("/api/machine/config", { cache: "no-store" })
-        if (!aborted && r.ok) {
-          setCfg(await r.json())
-        }
-      } finally {
-        setCfgBusy(false)
-      }
-    })()
-    return () => { aborted = true }
-  }, [activeSection, settingsAuthed])
-  // Simulate data loading
-  useEffect(() => {
-    // dBFS表示設定の読み込み
-    try {
-      const v = typeof window !== 'undefined' ? window.localStorage.getItem('showDbfs') : null
-      if (v === '0') setShowDbfs(false)
-      if (v === '1') setShowDbfs(true)
-    } catch {}
-    const timer = setTimeout(() => {
-      setIsLoading(false)
-    }, 2000)
-
-    return () => clearTimeout(timer)
-  }, [])
-
-  // 設備ステータス（閾値）取得（30秒）
-  useEffect(() => {
-    let aborted = false
-    const fetchStatus = async () => {
-      try {
-        const res = await fetch("/api/machine/status", { cache: "no-store" })
-        if (!res.ok) return
-        const d = await res.json()
-        if (!aborted) setStatus({ equipmentId: d.equipmentId, thresholds: d.thresholds })
-      } catch {}
-    }
-    fetchStatus()
-    const t = setInterval(fetchStatus, 30000)
-    return () => { aborted = true; clearInterval(t) }
-  }, [])
-
-  const classify = (dbfs?: number): "on" | "off" | "unknown" => {
-    const T_on = status?.thresholds?.T_on
-    const T_off = status?.thresholds?.T_off
-    if (typeof dbfs !== "number" || typeof T_on !== "number" || typeof T_off !== "number") return "unknown"
-    if (dbfs > T_on) return "on"
-    if (dbfs < T_off) return "off"
-    return "unknown"
+  type AudioItem = {
+    key: string
+    url: string
+    size?: number
+    lastModified?: string
+    isAnomaly?: boolean
+    reconstructionError?: number
+    inferenceThreshold?: number
+    inferenceTimestamp?: number
   }
+  const [audioItems, setAudioItems] = useState<AudioItem[]>([])
 
   // 最新10件の音声リスト取得（10秒ポーリング）
   useEffect(() => {
     let aborted = false
     async function fetchLatest() {
       try {
-        setAudioLoading(true)
         const res = await fetch("/api/audio/latest", { cache: "no-store" })
         if (!res.ok) return
         const data: { items?: AudioItem[] } = await res.json()
         if (!aborted && Array.isArray(data.items)) setAudioItems(data.items)
-      } finally {
-        setAudioLoading(false)
-      }
+      } catch { /* ignore */ }
     }
-    // 最初に1回 + 10秒間隔
     fetchLatest()
     const t = setInterval(fetchLatest, 10000)
     return () => { aborted = true; clearInterval(t) }
   }, [])
 
-  // Update time
-  useEffect(() => {
-    // 初回のみクライアントサイドで時間を設定
-    setCurrentTime(new Date())
-    
-    const interval = setInterval(() => {
-      setCurrentTime(new Date())
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [])
-
-  // Heartbeat: センサー1の死活取得（15秒ポーリング）
+  // Heartbeat: センサー死活取得（15秒ポーリング）
   useEffect(() => {
     let aborted = false
-
     async function fetchHeartbeat() {
       try {
         const res = await fetch(`/api/heartbeat?thing=kawasaki-ras-1`, { cache: "no-store" })
         if (!res.ok) {
-          if (!aborted) {
-            setDevicesStatus(prev => prev.map((d, idx) => idx === 0 ? { ...d, online: false } : d))
-          }
+          if (!aborted) setDevicesStatus(prev => prev.map((d, i) => i === 0 ? { ...d, online: false } : d))
           return
         }
         const data: { status: "Active" | "Offline" } = await res.json()
-        if (aborted) return
-        setDevicesStatus(prev => prev.map((d, idx) => idx === 0 ? { ...d, online: data.status === "Active" } : d))
+        if (!aborted) setDevicesStatus(prev => prev.map((d, i) => i === 0 ? { ...d, online: data.status === "Active" } : d))
       } catch {
-        if (!aborted) {
-          setDevicesStatus(prev => prev.map((d, idx) => idx === 0 ? { ...d, online: false } : d))
-        }
+        if (!aborted) setDevicesStatus(prev => prev.map((d, i) => i === 0 ? { ...d, online: false } : d))
       }
     }
-
     fetchHeartbeat()
     const t = setInterval(fetchHeartbeat, 15000)
     return () => { aborted = true; clearInterval(t) }
   }, [])
 
-  // removed changing data
-  useEffect(() => {
-    const interval = setInterval(() => {
-      
-      
-    }, 3000)
-
-    return () => clearInterval(interval)
-  }, [])
-
-  // Particle effect
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-
-    canvas.width = canvas.offsetWidth
-    canvas.height = canvas.offsetHeight
-
-    const particles: Particle[] = []
-    const particleCount = 100
-
-    class Particle {
-      x: number
-      y: number
-      size: number
-      speedX: number
-      speedY: number
-      color: string
-
-      constructor() {
-        this.x = Math.random() * canvas!.width
-        this.y = Math.random() * canvas!.height
-        this.size = Math.random() * 3 + 1
-        this.speedX = (Math.random() - 0.5) * 0.5
-        this.speedY = (Math.random() - 0.5) * 0.5
-        this.color = `rgba(${Math.floor(Math.random() * 100) + 100}, ${Math.floor(Math.random() * 100) + 150}, ${Math.floor(Math.random() * 55) + 200}, ${Math.random() * 0.5 + 0.2})`
-      }
-
-      update() {
-        this.x += this.speedX
-        this.y += this.speedY
-
-        if (this.x > canvas!.width) this.x = 0
-        if (this.x < 0) this.x = canvas!.width
-        if (this.y > canvas!.height) this.y = 0
-        if (this.y < 0) this.y = canvas!.height
-      }
-
-      draw() {
-        if (!ctx) return
-        ctx.fillStyle = this.color
-        ctx.beginPath()
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2)
-        ctx.fill()
-      }
-    }
-
-    for (let i = 0; i < particleCount; i++) {
-      particles.push(new Particle())
-    }
-
-    function animate() {
-      if (!ctx || !canvas) return
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-      for (const particle of particles) {
-        particle.update()
-        particle.draw()
-      }
-
-      requestAnimationFrame(animate)
-    }
-
-    animate()
-
-    const handleResize = () => {
-      if (!canvas) return
-      canvas.width = canvas.offsetWidth
-      canvas.height = canvas.offsetHeight
-    }
-
-    window.addEventListener("resize", handleResize)
-
-    return () => {
-      window.removeEventListener("resize", handleResize)
-    }
-  }, [])
-
-  // Toggle theme
-  const toggleTheme = () => {
-    setTheme(theme === "dark" ? "light" : "dark")
-  }
-
-  // Format time
-  const formatTime = (date: Date | null) => {
-    if (!date) return "--:--:--"
-    return date.toLocaleTimeString("en-US", {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    })
-  }
-
-  // Format date
-  const formatDate = (date: Date | null) => {
-    if (!date) return "---"
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    })
-  }
-
-  // ISO8601 → ローカル時刻文字列（24h）
   const formatIsoLocal = (iso?: string) => {
     if (!iso) return ""
     const d = new Date(iso)
     if (isNaN(d.getTime())) return ""
     return d.toLocaleString("ja-JP", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
     })
   }
 
+  const navItems: NavItem[] = [
+    { id: "dashboard", label: "ダッシュボード", icon: <Command className="w-4 h-4" /> },
+    { id: "sound", label: "音確認", icon: <Ear className="w-4 h-4" /> },
+    { id: "settings", label: "設定", icon: <Settings className="w-4 h-4" /> },
+  ]
+
+  const activeNavItem = navItems.find(item => item.id === activeSection)
+
+  const getPageInfo = () => {
+    switch (activeSection) {
+      case "dashboard": return { title: "ダッシュボード" }
+      case "sound": return { title: "音確認" }
+      case "settings": return { title: "設定" }
+    }
+  }
+
+  const pageInfo = getPageInfo()
+
   return (
-    <div
-      className={`${theme} min-h-screen bg-gradient-to-br from-black to-slate-900 text-slate-100 relative overflow-hidden`}
-    >
-      {/* Background particle effect */}
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full opacity-30" />
+    <div className="min-h-screen bg-white flex">
+      <Sidebar
+        items={navItems}
+        activeItem={activeSection}
+        onItemChange={(id) => setActiveSection(id as typeof activeSection)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+      />
 
-      {/* Loading overlay */}
-      {isLoading && (
-        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div className="flex flex-col items-center">
-            <div className="relative w-24 h-24">
-              <div className="absolute inset-0 border-4 border-cyan-500/30 rounded-full animate-ping"></div>
-              <div className="absolute inset-2 border-4 border-t-cyan-500 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin"></div>
-              <div className="absolute inset-4 border-4 border-r-purple-500 border-t-transparent border-b-transparent border-l-transparent rounded-full animate-spin-slow"></div>
-              <div className="absolute inset-6 border-4 border-b-blue-500 border-t-transparent border-r-transparent border-l-transparent rounded-full animate-spin-slower"></div>
-              <div className="absolute inset-8 border-4 border-l-green-500 border-t-transparent border-r-transparent border-b-transparent rounded-full animate-spin"></div>
-            </div>
-            <div className="mt-4 text-cyan-500 font-mono text-sm tracking-wider">SYSTEM INITIALIZING</div>
-          </div>
-        </div>
-      )}
-
-      <div className="container mx-auto p-4 relative z-10">
-        {/* Header */}
-<header className="flex items-center py-4 border-b border-slate-700/50 mb-6">
-          <div className="flex items-center space-x-2">
-            <Hexagon className="h-8 w-8 text-cyan-500" />
-            <span className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-              OtoMoni
-            </span>
-          </div>
-        </header>
-
-        {/* Main content */}
-<div className="flex gap-6 justify-center">
-  {/* Sidebar */}
-  <div className="w-64 flex-shrink-0">
-    <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm h-full">
-      <CardContent className="p-4">
-        <nav className="space-y-2">
-          <NavItem icon={Command} label="ダッシュボード" active={activeSection==='dashboard'} onClick={() => setActiveSection('dashboard')} />
-          <NavItem icon={Ear} label="音確認" active={activeSection==='sound'} onClick={() => setActiveSection('sound')} />
-          <NavItem icon={MessageSquare} label="AI アシスタント" active={activeSection==='ai'} onClick={() => setActiveSection('ai')} />
-          <NavItem icon={Settings} label="設定" active={activeSection==='settings'} onClick={() => setActiveSection('settings')} />
-        </nav>
-      </CardContent>
-    </Card>
-  </div>
-
-  {/* Main area */}
-  <div className="max-w-4xl flex-1">
-    {activeSection === 'dashboard' && (
-      <div className="grid gap-6">
-        {/* System overview */}
-        <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm overflow-hidden">
-          <CardHeader className="hidden">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-slate-100 flex items-center">
-                <Activity className="mr-2 h-5 w-5 text-cyan-500" />
-                System Overview
-              </CardTitle>
-              <div className="flex items-center space-x-2">
-                <Badge variant="outline" className="bg-slate-800/50 text-cyan-400 border-cyan-500/50 text-xs">
-                  <div className="h-1.5 w-1.5 rounded-full bg-cyan-500 mr-1 animate-pulse"></div>
-                  LIVE
-                </Badge>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400">
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="md:col-span-1"><DeviceStatusCard devices={devicesStatus} /></div>
-              {/* アラート */}
-              <div className="md:col-span-2">
-                <Card className="bg-slate-800/50 rounded-lg border from-purple-500 to-pink-500 border-purple-500/30 relative overflow-hidden">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-slate-100 flex items-center text-base">
-                      <AlertCircle className="mr-2 h-5 w-5 text-purple-500" />
-                      アラート
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <AlertItem title="異音は検出されていません" time="現在" description="設備は正常に稼働しています。" type="success" />
-                    </div>
-                  </CardContent>
-                  <div className="absolute -bottom-6 -right-6 h-16 w-16 rounded-full bg-gradient-to-r opacity-20 blur-xl from-purple-500 to-pink-500"></div>
-                </Card>
-              </div>
-            </div>
-
-            <div className="mt-8">
-              <Tabs defaultValue="hour" className="w-full">
-                <div className="relative mb-4">
-                  <TabsList className="bg-slate-800/50 p-1">
-                    <TabsTrigger value="hour" className="data-[state=active]:bg-slate-700 data-[state=active]:text-cyan-400">時</TabsTrigger>
-                    <TabsTrigger value="day" className="data-[state=active]:bg-slate-700 data-[state=active]:text-cyan-400">日</TabsTrigger>
-                    <TabsTrigger value="week" className="data-[state=active]:bg-slate-700 data-[state=active]:text-cyan-400">週</TabsTrigger>
-                  </TabsList>
-                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-slate-100 text-base font-semibold flex items-center space-x-2">
-                    <Activity className="h-5 w-5 text-cyan-500" />
-                    <span>稼働音状況</span>
-                  </div>
-                </div>
-                <TabsContent value="hour" className="mt-0">
-                  <div className="h-64 w-full relative bg-slate-800/30 rounded-lg border border-slate-700/50 overflow-hidden">
-                    <PerformanceChart />
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Security & Alerts (hidden) */}
-        <div className="hidden">
-          <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-slate-100 flex items-center text-base">
-                <AlertCircle className="mr-2 h-5 w-5 text-purple-500" />
-                アラート
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <AlertItem title="Security Scan Complete" time="14:32:12" description="No threats detected in system scan" type="info" />
-                <AlertItem title="Bandwidth Spike Detected" time="13:45:06" description="Unusual network activity on port 443" type="warning" />
-                <AlertItem title="しきい値を超える異音が検出されました" time="09:12:45" description="Version 12.4.5 ready to install" type="update" />
-                <AlertItem title="Backup Completed" time="04:30:00" description="Incremental backup to drive E: successful" type="success" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    )}
-
-    
-
-    {activeSection === 'sound' && (
-      <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm overflow-hidden">
-        <CardHeader className="pb-2 flex items-center">
-          <CardTitle className="text-slate-100 text-base flex items-center">
-            <Ear className="mr-2 h-5 w-5 text-cyan-500" />音確認
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {audioItems.length === 0 && (
-              <div className="text-sm text-slate-400">まだデータがありません。新しい録音が追加されると自動で表示されます。</div>
-            )}
-            {audioItems.map((it, idx) => {
-              const serverState = (it as any).state as ("on"|"off"|undefined)
-              // サーバ判定優先。なければクライアント判定でフォールバック
-              const state = serverState ?? classify(it.dbfs)
-              const badge =
-                state === "on"
-                  ? <Badge variant="outline" className="bg-slate-800/50 text-cyan-400 border-cyan-500/50 text-xs flex items-center justify-center min-w-[88px]">
-                      <div className="h-1.5 w-1.5 rounded-full bg-cyan-500 mr-1 animate-pulse"></div>
-                      Running
-                    </Badge>
-                  : state === "off"
-                  ? <Badge variant="outline" className="bg-slate-700/20 text-slate-300 border-slate-600/30 text-xs flex items-center justify-center min-w-[88px]">
-                      <div className="h-1.5 w-1.5 rounded-full bg-slate-500 mr-1"></div>
-                      Stop
-                    </Badge>
-                  : <Badge variant="outline" className="bg-slate-800/40 text-slate-400 border-slate-600/40 text-xs">判定中</Badge>
-              return (
-              <div key={`${it.key}-${idx}`} className="flex items-center justify-between gap-4 bg-slate-800/50 rounded-lg border border-slate-700/50 p-3">
-                <div className="min-w-0 flex-1 flex items-center gap-3">
-                  {badge}
-                  <div className="text-sm text-slate-200">{formatIsoLocal(it.lastModified)}</div>
-                  {showDbfs && (
-                    <div className="text-[11px] text-slate-400">{typeof it.dbfs === 'number' ? `${it.dbfs.toFixed(1)} dBFS` : ''}</div>
-                  )}
-                </div>
-                <div className="audio-dark w-[320px]">
-                  <audio controls src={it.url} preload="none" />
-                </div>
-              </div>
-            )})}
-          </div>
-        </CardContent>
-      </Card>
-    )}
-
-    {activeSection === 'ai' && (
-      <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
-        <CardHeader className="pb-2 flex flex-row items-center justify-between">
-          <CardTitle className="text-slate-100 flex items-center text-base">
-            <MessageSquare className="mr-2 h-5 w-5 text-blue-500" />
-            AIアシスタント ログ
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-sm text-slate-400">ログはまだありません。</div>
-        </CardContent>
-        <CardFooter className="border-t border-slate-700/50 pt-4">
-          <div className="flex items-center w-full space-x-2">
-            <input type="text" placeholder="メッセージを入力..." className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500" />
-            <Button size="icon" className="bg-blue-600 hover:bg-blue-700"><Mic className="h-4 w-4" /></Button>
-            <Button size="icon" className="bg-cyan-600 hover:bg-cyan-700"><MessageSquare className="h-4 w-4" /></Button>
-          </div>
-        </CardFooter>
-      </Card>
-    )}
-
-    {activeSection === 'settings' && (
-      settingsAuthed ? (
-        <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
-          <CardHeader className="pb-2 flex items-center justify-between">
-            <CardTitle className="text-slate-100 text-base flex items-center">
-              <Settings className="mr-2 h-5 w-5 text-cyan-500" />設定
-            </CardTitle>
-            <div className="text-xs text-slate-400">{cfg?.equipmentId ? `設備: ${cfg.equipmentId}` : ""}</div>
-          </CardHeader>
-          <CardContent>
-            {/* 現在適用中の設定表示 */}
-            <div className="mb-3 p-3 rounded-lg border border-slate-700/50 bg-slate-800/40">
-              <div className="text-xs text-slate-400 mb-1">現在の設定</div>
-              <div className="text-sm text-slate-200">
-                {typeof cfg?.manualOnDb === 'number' && isFinite(cfg.manualOnDb)
-                  ? <>手動 音量: {cfg.manualOnDb.toFixed(1)} dBFS</>
-                  : <>自動計算（統計ベース）</>}
-              </div>
-              {status?.thresholds && (
-                <div className="text-xs text-slate-400 mt-1">
-                  適用中 T_on: {status.thresholds.T_on.toFixed(1)} dBFS / T_off: {status.thresholds.T_off.toFixed(1)} dBFS
-                </div>
+      {/* Main */}
+      <main className={`flex-1 overflow-auto transition-all duration-300 ${
+        sidebarCollapsed ? "ml-[73px]" : "ml-[192px]"
+      }`}>
+        <div className="max-w-6xl mx-auto px-8 pb-8" style={{ paddingTop: "22px" }}>
+          {/* Page title */}
+          <div className="mb-3">
+            <div className="flex items-center gap-3">
+              {activeNavItem && (
+                <span className="text-zinc-400" style={{ display: "inline-flex", transform: "scale(1.4)", transformOrigin: "center" }}>
+                  {activeNavItem.icon}
+                </span>
               )}
+              <h2 className="font-extrabold text-zinc-800" style={{ fontSize: "19px" }}>{pageInfo.title}</h2>
             </div>
+          </div>
 
-            <div className="flex gap-2 mb-3">
-              <Button
-                variant="outline"
-                onClick={async()=>{
-                  try{
-                    setCfgBusy(true)
-                    const r = await fetch('/api/machine/config', { cache: 'no-store' })
-                    if (r.ok) setCfg(await r.json())
-                  } finally { setCfgBusy(false) }
-                }}
-                disabled={cfgBusy}
-                className="border-slate-600 text-slate-200"
-              >読み込み</Button>
-              <Button
-                onClick={async()=>{
-                  try{
-                    setCfgBusy(true)
-                    const r = await fetch('/api/machine/config', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ manualOnDb: cfg?.manualOnDb, equipmentId: cfg?.equipmentId }) })
-                    if (r.ok) {
-                      setCfg(await r.json())
-                    }
-                  } finally { setCfgBusy(false) }
-                }}
-                disabled={cfgBusy}
-                className="bg-cyan-600 hover:bg-cyan-700"
-              >保存</Button>
-            </div>
-            <div className="grid md:grid-cols-2 gap-4">
-              <SettingNumber label="音量 (dBFS)" value={cfg?.manualOnDb} min={-120} max={0} step={0.1} onChange={(v)=>setCfg(prev=>({...prev, manualOnDb:v}))} />
-              <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-3 flex items-center justify-between">
-                <div>
-                  <div className="text-xs text-slate-400 mb-1">音確認にdBFSを表示</div>
-                  <div className="text-[10px] text-slate-500">ONで各音声項目にdBFSを表示します</div>
+          {/* Content area */}
+          <div className="bg-zinc-100 rounded-2xl px-6 pb-6 pt-5">
+            {/* Dashboard */}
+            {activeSection === "dashboard" && (
+              <div className="space-y-5">
+                {/* センサー＋アラート横並び */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">接続センサー</span>
+                      <Server className="h-3.5 w-3.5 text-zinc-400" />
+                    </div>
+                    <div className="space-y-2">
+                      {devicesStatus.map((device) => (
+                        <div key={device.name} className="flex items-center justify-between">
+                          <span className="text-sm text-zinc-700">{device.name}</span>
+                          {device.online ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Active
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+                              <span className="h-1.5 w-1.5 rounded-full bg-zinc-300" />
+                              Offline
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">アラート</span>
+                    </div>
+                    <div className="flex items-center gap-2.5 text-sm text-emerald-600">
+                      <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                      <span>異常は検出されていません &mdash; 設備は正常に稼働しています。</span>
+                    </div>
+                  </div>
                 </div>
-                <Switch
-                  checked={showDbfs}
-                  onCheckedChange={(v:boolean)=>{ setShowDbfs(v); try{ window.localStorage.setItem('showDbfs', v ? '1' : '0') } catch {} }}
-                />
+
+                <div className="border-t border-zinc-200" />
+
+                {/* チャート */}
+                <div>
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <Activity className="h-3.5 w-3.5 text-zinc-400" />
+                    <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">稼働音状況</span>
+                  </div>
+                  <div className="h-40 flex items-center justify-center text-sm text-zinc-400">
+                    データを蓄積中...
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="text-xs text-slate-500 mt-3">
-              指定した音量（dBFS）以上を「稼働中」、そこから 2dB 低い境界を「停止中」として判定します（微小なブレは自動で吸収します）。
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-slate-100 text-base flex items-center">
-              <Settings className="mr-2 h-5 w-5 text-cyan-500" />設定
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3 max-w-sm">
-              <div className="text-sm text-slate-400">パスワードを入力してください。</div>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  if (settingsPw === 'admin') {
-                    setSettingsPwError(null)
-                    setSettingsAuthed(true)
-                    setSettingsPw("")
-                  } else {
-                    setSettingsPwError("パスワードが正しくありません。")
-                  }
-                }}
-                className="flex gap-2"
-              >
-                <input
-                  type="password"
-                  value={settingsPw}
-                  onChange={(e)=>setSettingsPw(e.target.value)}
-                  placeholder="パスワード"
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                />
-                <Button type="submit" className="bg-cyan-600 hover:bg-cyan-700">送信</Button>
-              </form>
-              {settingsPwError && <div className="text-xs text-red-400">{settingsPwError}</div>}
-            </div>
-          </CardContent>
-        </Card>
-      )
-    )}
-    
-  </div>
-  {/* Right sidebar */}
-          <div className="hidden">
-            <div className="grid gap-6">
-              {/* System time */}
-              <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm overflow-hidden">
-                <CardContent className="p-0">
-                  <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 border-b border-slate-700/50">
-                    <div className="text-center">
-                      <div className="text-xs text-slate-500 mb-1 font-mono">SYSTEM TIME</div>
-                      <div className="text-3xl font-mono text-cyan-400 mb-1">{formatTime(currentTime)}</div>
-                      <div className="text-sm text-slate-400">{formatDate(currentTime)}</div>
-                    </div>
+            )}
+
+            {/* 音確認 */}
+            {activeSection === "sound" && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">録音データ</span>
+                  <span className="text-xs text-zinc-400">{audioItems.length} 件</span>
+                </div>
+                {audioItems.length === 0 ? (
+                  <div className="py-12 text-sm text-zinc-400 text-center">
+                    まだデータがありません。新しい録音が追加されると自動で表示されます。
                   </div>
-                  <div className="p-4">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-slate-800/50 rounded-md p-3 border border-slate-700/50">
-                        <div className="text-xs text-slate-500 mb-1">Uptime</div>
-                        <div className="text-sm font-mono text-slate-200">14d 06:42:18</div>
-                      </div>
-                      <div className="bg-slate-800/50 rounded-md p-3 border border-slate-700/50">
-                        <div className="text-xs text-slate-500 mb-1">Time Zone</div>
-                        <div className="text-sm font-mono text-slate-200">UTC-08:00</div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Quick actions */}
-              <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-slate-100 text-base">Quick Actions</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-3">
-                    <ActionButton icon={Shield} label="Security Scan" />
-                    <ActionButton icon={RefreshCw} label="Sync Data" />
-                    <ActionButton icon={Download} label="Backup" />
-                    <ActionButton icon={Terminal} label="Console" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Resource allocation */}
-              <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-slate-100 text-base">Resource Allocation</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="text-sm text-slate-400">Processing Power</div>
-                        <div className="text-xs text-cyan-400">42% allocated</div>
-                      </div>
-                      <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full"
-                          style={{ width: "42%" }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="text-sm text-slate-400">Memory Allocation</div>
-                        <div className="text-xs text-purple-400">68% allocated</div>
-                      </div>
-                      <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full"
-                          style={{ width: "68%" }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="text-sm text-slate-400">Network Bandwidth</div>
-                        <div className="text-xs text-blue-400">35% allocated</div>
-                      </div>
-                      <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"
-                          style={{ width: "35%" }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-700/50">
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="text-slate-400">Priority Level</div>
-                        <div className="flex items-center">
-                          <Slider defaultValue={[3]} max={5} step={1} className="w-24 mr-2" />
-                          <span className="text-cyan-400">3/5</span>
+                ) : (
+                  <div className="space-y-2">
+                    {audioItems.map((it, idx) => (
+                      <div key={`${it.key}-${idx}`} className="flex items-center gap-4 px-4 py-3 rounded-lg bg-white border border-zinc-200">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-zinc-700 font-medium">{formatIsoLocal(it.lastModified)}</span>
+                            {it.isAnomaly === true && (
+                              <span className="text-xs font-medium px-2 py-0.5 rounded bg-red-50 text-red-600">異常検知</span>
+                            )}
+                            {it.isAnomaly === false && (
+                              <span className="text-xs font-medium px-2 py-0.5 rounded bg-emerald-50 text-emerald-600">正常</span>
+                            )}
+                            {it.isAnomaly === undefined && (
+                              <span className="text-xs font-medium px-2 py-0.5 rounded bg-zinc-200/60 text-zinc-400">未判定</span>
+                            )}
+                          </div>
+                          {typeof it.reconstructionError === "number" && (
+                            <div className="text-xs text-zinc-400 mt-0.5 font-mono">
+                              MSE: {it.reconstructionError.toFixed(4)} / 閾値: {it.inferenceThreshold?.toFixed(1) ?? "5.0"}
+                            </div>
+                          )}
+                        </div>
+                        <div className="w-[280px] flex-shrink-0">
+                          <audio controls src={it.url} preload="none" className="w-full h-8" />
                         </div>
                       </div>
-                    </div>
+                    ))}
                   </div>
-                </CardContent>
-              </Card>
+                )}
+              </div>
+            )}
 
-              {/* Environment controls */}
-              {false && (
-              <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-slate-100 text-base">Environment Controls</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <Radio className="text-cyan-500 mr-2 h-4 w-4" />
-                        <Label className="text-sm text-slate-400">Power Management</Label>
-                      </div>
-                      <Switch />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <Lock className="text-cyan-500 mr-2 h-4 w-4" />
-                        <Label className="text-sm text-slate-400">Security Protocol</Label>
-                      </div>
-                      <Switch defaultChecked />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <Zap className="text-cyan-500 mr-2 h-4 w-4" />
-                        <Label className="text-sm text-slate-400">Power Saving Mode</Label>
-                      </div>
-                      <Switch />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <CircleOff className="text-cyan-500 mr-2 h-4 w-4" />
-                        <Label className="text-sm text-slate-400">Auto Shutdown</Label>
-                      </div>
-                      <Switch defaultChecked />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              )}
-            </div>
+            {/* 設定 */}
+            {activeSection === "settings" && <InferenceSettings />}
           </div>
         </div>
-      </div>
+      </main>
     </div>
   )
 }
- 
 
-// Component for nav items
-function NavItem({
-  icon: Icon,
-  label,
-  active,
-  href,
-  onClick,
-}: {
-  icon: LucideIcon
-  label: string
-  active?: boolean
-  href?: string
-  onClick?: () => void
-}) {
-  const content = (
-    <>
-      <Icon className="mr-2 h-4 w-4" />
-      {label}
-    </>
-  )
+// ─── Inference Settings ─────────────────────────────────────
 
-  if (href) {
-    return (
-      <Button
-        asChild
-        variant="ghost"
-        className={`w-full justify-start ${active ? "bg-slate-800/70 text-cyan-400" : "text-slate-400 hover:text-slate-100"}`}
-      >
-        <Link href={href}>{content}</Link>
-      </Button>
-    )
+function InferenceSettings() {
+  type ModelInfo = { key: string; size?: number; lastModified?: string }
+
+  const [models, setModels] = useState<ModelInfo[]>([])
+  const [selectedModel, setSelectedModel] = useState("")
+  const [threshold, setThreshold] = useState(5.0)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    let aborted = false
+    async function load() {
+      try {
+        const [configRes, modelsRes] = await Promise.all([
+          fetch("/api/inference/config", { cache: "no-store" }),
+          fetch("/api/inference/models", { cache: "no-store" }),
+        ])
+        if (aborted) return
+        if (configRes.ok) {
+          const cfg = await configRes.json()
+          setSelectedModel(cfg.modelS3Key ?? "")
+          setThreshold(cfg.anomalyThreshold ?? 5.0)
+        }
+        if (modelsRes.ok) {
+          const data = await modelsRes.json()
+          setModels(data.models ?? [])
+        }
+      } catch (e) {
+        console.error("Failed to load inference settings", e)
+      } finally {
+        if (!aborted) setLoading(false)
+      }
+    }
+    load()
+    return () => { aborted = true }
+  }, [])
+
+  async function handleSave() {
+    setSaving(true)
+    setSaved(false)
+    try {
+      const res = await fetch("/api/inference/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelS3Key: selectedModel, anomalyThreshold: threshold }),
+      })
+      if (res.ok) {
+        setSaved(true)
+        setTimeout(() => setSaved(false), 3000)
+      }
+    } catch (e) {
+      console.error("Failed to save config", e)
+    } finally {
+      setSaving(false)
+    }
   }
 
-  return (
-    <Button
-      variant="ghost"
-      onClick={onClick}
-      className={`w-full justify-start ${active ? "bg-slate-800/70 text-cyan-400" : "text-slate-400 hover:text-slate-100"}`}
-    >
-      {content}
-    </Button>
-  )
-}
-
-// Component for status items
-function StatusItem({ label, value, color }: { label: string; value: number; color: string }) {
-  const getColor = () => {
-    switch (color) {
-      case "cyan":
-        return "from-cyan-500 to-blue-500"
-      case "green":
-        return "from-green-500 to-emerald-500"
-      case "blue":
-        return "from-blue-500 to-indigo-500"
-      case "purple":
-        return "from-purple-500 to-pink-500"
-      default:
-        return "from-cyan-500 to-blue-500"
-    }
+  const formatSize = (bytes?: number) => {
+    if (!bytes) return ""
+    return `${(bytes / 1024).toFixed(0)} KB`
   }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <div className="text-xs text-slate-400">{label}</div>
-        <div className="text-xs text-slate-400">{value}%</div>
+      <div className="flex items-center gap-1.5 mb-4">
+        <Brain className="h-3.5 w-3.5 text-violet-500" />
+        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">クラウド推論設定</span>
       </div>
-      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-        <div className={`h-full bg-gradient-to-r ${getColor()} rounded-full`} style={{ width: `${value}%` }}></div>
-      </div>
-    </div>
-  )
-}
 
-// Component for metric cards
-function MetricCard({
-  title,
-  value,
-  icon: Icon,
-  trend,
-  color,
-  detail,
-}: {
-  title: string
-  value: number
-  icon: LucideIcon
-  trend: "up" | "down" | "stable"
-  color: string
-  detail: string
-}) {
-  const getColor = () => {
-    switch (color) {
-      case "cyan":
-        return "from-cyan-500 to-blue-500 border-cyan-500/30"
-      case "green":
-        return "from-green-500 to-emerald-500 border-green-500/30"
-      case "blue":
-        return "from-blue-500 to-indigo-500 border-blue-500/30"
-      case "purple":
-        return "from-purple-500 to-pink-500 border-purple-500/30"
-      default:
-        return "from-cyan-500 to-blue-500 border-cyan-500/30"
-    }
-  }
-
-  const getTrendIcon = () => {
-    switch (trend) {
-      case "up":
-        return <BarChart3 className="h-4 w-4 text-amber-500" />
-      case "down":
-        return <BarChart3 className="h-4 w-4 rotate-180 text-green-500" />
-      case "stable":
-        return <LineChart className="h-4 w-4 text-blue-500" />
-      default:
-        return null
-    }
-  }
-
-  return (
-    <div className={`bg-slate-800/50 rounded-lg border ${getColor()} p-4 relative overflow-hidden`}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm text-slate-400">{title}</div>
-        <Icon className={`h-5 w-5 text-${color}-500`} />
-      </div>
-      <div className="text-2xl font-bold mb-1 bg-gradient-to-r bg-clip-text text-transparent from-slate-100 to-slate-300">
-        {value}%
-      </div>
-      <div className="text-xs text-slate-500">{detail}</div>
-      <div className="absolute bottom-2 right-2 flex items-center">{getTrendIcon()}</div>
-      <div className="absolute -bottom-6 -right-6 h-16 w-16 rounded-full bg-gradient-to-r opacity-20 blur-xl from-cyan-500 to-blue-500"></div>
-    </div>
-  )
-}
-
-// Performance chart component
-
-// Component for device status card
-function DeviceStatusCard({ devices }: { devices: { name: string; online: boolean }[] }) {
-  return (
-    <div className="bg-slate-800/50 rounded-lg border from-cyan-500 to-blue-500 border-cyan-500/30 p-4 relative overflow-hidden">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-base text-slate-100">接続センサー</span>
-        <Server className="h-5 w-5 text-cyan-500" />
-      </div>
-      <div className="space-y-2">
-        {devices.map((device) => (
-          <div key={device.name} className="flex items-center justify-between">
-            <span className="text-slate-400 text-xs">{device.name}</span>
-            {device.online ? (
-              <Badge
-                variant="outline"
-                className="bg-slate-800/50 text-cyan-400 border-cyan-500/50 text-xs flex items-center"
-              >
-                <div className="h-1.5 w-1.5 rounded-full bg-cyan-500 mr-1 animate-pulse"></div>
-                Active
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="bg-slate-700/20 text-slate-400 border-slate-500/50 text-xs flex items-center">
-                <div className="h-1.5 w-1.5 rounded-full bg-transparent mr-1"></div>
-                Offline
-              </Badge>
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-zinc-400 py-8">
+          <Loader2 className="h-4 w-4 animate-spin" />読み込み中...
+        </div>
+      ) : (
+        <div className="space-y-5 max-w-lg">
+          {/* モデル選択 */}
+          <div className="space-y-1.5">
+            <label className="text-xs text-zinc-500 block">推論モデル</label>
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-lg text-zinc-800 text-sm focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
+            >
+              {models.length === 0 && <option value="">モデルが見つかりません</option>}
+              {models.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.key.replace("models/", "")}{m.size ? ` (${formatSize(m.size)})` : ""}
+                </option>
+              ))}
+            </select>
+            {selectedModel && (
+              <div className="text-xs text-zinc-400 font-mono">
+                s3://recordings-kawasaki-city/{selectedModel}
+              </div>
             )}
           </div>
-        ))}
-      </div>
-      <div className="absolute -bottom-6 -right-6 h-16 w-16 rounded-full bg-gradient-to-r opacity-20 blur-xl from-cyan-500 to-blue-500"></div>
-    </div>
-  )
-}
 
-function PerformanceChart() {
-  // 0〜24時のダミーデータ（20時のみ6、それ以外は0）
-  const chartData = Array.from({ length: 25 }, (_, hour) => ({
-    hour,
-    value: hour === 20 ? 6 : 0,
-  }))
-
-  return (
-    <div className="h-full w-full px-2 py-2">
-      <ResponsiveContainer width="100%" height="100%">
-        <RechartsLineChart data={chartData} margin={{ top: 8, right: 16, bottom: 8, left: 32 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis
-            dataKey="hour"
-            type="number"
-            domain={[0, 24]}
-            tickCount={13}
-            allowDecimals={false}
-            tickFormatter={(v) => `${String(v).padStart(2, '0')}:00`}
-            stroke="#94a3b8"
-          />
-          <YAxis
-            domain={[0, 10]}
-            ticks={[0, 2, 4, 6, 8, 10]}
-            allowDecimals={false}
-            stroke="#94a3b8"
-          />
-          <RechartsTooltip formatter={(v) => v as number} labelFormatter={(v) => `${String(v).padStart(2, '0')}:00`} />
-          <Line type="monotone" dataKey="value" stroke="#22d3ee" strokeWidth={2} dot={false} isAnimationActive={false} />
-        </RechartsLineChart>
-      </ResponsiveContainer>
-    </div>
-  )
-}
-
-// Process row component
-function ProcessRow({
-  pid,
-  name,
-  user,
-  cpu,
-  memory,
-  status,
-}: {
-  pid: string
-  name: string
-  user: string
-  cpu: number
-  memory: number
-  status: string
-}) {
-  return (
-    <div className="grid grid-cols-12 py-2 px-3 text-sm hover:bg-slate-800/50">
-      <div className="col-span-1 text-slate-500">{pid}</div>
-      <div className="col-span-4 text-slate-300">{name}</div>
-      <div className="col-span-2 text-slate-400">{user}</div>
-      <div className="col-span-2 text-cyan-400">{cpu}%</div>
-      <div className="col-span-2 text-purple-400">{memory} MB</div>
-      <div className="col-span-1">
-        <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/30 text-xs">
-          {status}
-        </Badge>
-      </div>
-    </div>
-  )
-}
-
-// Storage item component
-function StorageItem({
-  name,
-  total,
-  used,
-  type,
-}: {
-  name: string
-  total: number
-  used: number
-  type: string
-}) {
-  const percentage = Math.round((used / total) * 100)
-
-  return (
-    <div className="bg-slate-800/50 rounded-md p-3 border border-slate-700/50">
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm text-slate-300">{name}</div>
-        <Badge variant="outline" className="bg-slate-700/50 text-slate-300 border-slate-600/50 text-xs">
-          {type}
-        </Badge>
-      </div>
-      <div className="mb-2">
-        <div className="flex items-center justify-between mb-1">
-          <div className="text-xs text-slate-500">
-            {used} GB / {total} GB
+          {/* 閾値スライダー */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-zinc-500">異常判定閾値 (MSE)</label>
+              <span className="text-sm font-mono text-zinc-800 font-semibold">{threshold.toFixed(1)}</span>
+            </div>
+            <input
+              type="range"
+              min="0.5"
+              max="20"
+              step="0.1"
+              value={threshold}
+              onChange={(e) => setThreshold(parseFloat(e.target.value))}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-zinc-400">
+              <span>0.5 (厳しい)</span>
+              <span>20.0 (緩い)</span>
+            </div>
           </div>
-          <div className="text-xs text-slate-400">{percentage}%</div>
+
+          {/* 保存ボタン */}
+          <button
+            onClick={handleSave}
+            disabled={saving || !selectedModel}
+            className="inline-flex items-center gap-2 py-2 px-5 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-500 hover:shadow-lg hover:shadow-violet-500/30 active:scale-95 active:bg-violet-700 text-white transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : saved ? (
+              <CheckIcon className="h-4 w-4" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            {saved ? "保存しました" : "設定を保存"}
+          </button>
         </div>
-        <Progress value={percentage} className="h-1.5 bg-slate-700">
-          <div
-            className={`h-full rounded-full ${
-              percentage > 90 ? "bg-red-500" : percentage > 70 ? "bg-amber-500" : "bg-cyan-500"
-            }`}
-            style={{ width: `${percentage}%` }}
-          />
-        </Progress>
-      </div>
-      <div className="flex items-center justify-between text-xs">
-        <div className="text-slate-500">Free: {total - used} GB</div>
-        <Button variant="ghost" size="sm" className="h-6 text-xs px-2 text-slate-400 hover:text-slate-100">
-          Details
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-// Alert item component
-function AlertItem({
-  title,
-  time,
-  description,
-  type,
-}: {
-  title: string
-  time: string
-  description: string
-  type: "info" | "warning" | "error" | "success" | "update"
-}) {
-  const getTypeStyles = () => {
-    switch (type) {
-      case "info":
-        return { icon: Info, color: "text-blue-500 bg-blue-500/10 border-blue-500/30" }
-      case "warning":
-        return { icon: AlertCircle, color: "text-amber-500 bg-amber-500/10 border-amber-500/30" }
-      case "error":
-        return { icon: AlertCircle, color: "text-red-500 bg-red-500/10 border-red-500/30" }
-      case "success":
-        return { icon: Check, color: "text-green-500 bg-green-500/10 border-green-500/30" }
-      case "update":
-        return { icon: Mic, color: "text-purple-500 bg-purple-500/10 border-purple-500/30" }
-      default:
-        return { icon: Info, color: "text-blue-500 bg-blue-500/10 border-blue-500/30" }
-    }
-  }
-
-  const { icon: Icon, color } = getTypeStyles()
-
-  return (
-    <div className="flex items-start space-x-3">
-      <button type="button" className={`mt-0.5 p-2 rounded-full transition-colors cursor-pointer ${color.split(" ")[1]} ${color.split(" ")[2]} hover:opacity-90`}>
-        <Icon className={`h-4 w-4 ${color.split(" ")[0]}`} />
-      </button>
-      <div>
-        <div className="flex items-center">
-          <div className="text-sm font-medium text-slate-200">{title}</div>
-          <div className="ml-2 text-xs text-slate-500">{time}</div>
-        </div>
-        <div className="text-xs text-slate-400">{description}</div>
-      </div>
-    </div>
-  )
-}
-
-// Communication listは後で実データ接続時に追加
-
-// Action button component
-function ActionButton({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
-  return (
-    <Button
-      variant="outline"
-      className="h-auto py-3 px-3 border-slate-700 bg-slate-800/50 hover:bg-slate-700/50 flex flex-col items-center justify-center space-y-1 w-full"
-    >
-      <Icon className="h-5 w-5 text-cyan-500" />
-      <span className="text-xs">{label}</span>
-    </Button>
-  )
-}
-
-// Lucide icon wrapper components with proper typing
-const Info = (props: LucideProps) => <AlertCircle {...props} />
-
-const Check = (props: LucideProps) => <Shield {...props} />
-
-function SettingNumber({
-  label, value, min, max, step, onChange,
-}: {
-  label: string
-  value?: number
-  min: number
-  max: number
-  step: number
-  onChange: (v: number) => void
-}) {
-  return (
-    <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-3">
-      <div className="text-xs text-slate-400 mb-1">{label}</div>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        value={typeof value === 'number' && isFinite(value) ? value : ''}
-        onChange={(e)=> onChange(Number(e.target.value))}
-        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-      />
-      <div className="mt-1 text-[10px] text-slate-500">範囲: {min}〜{max} / step {step}</div>
+      )}
     </div>
   )
 }

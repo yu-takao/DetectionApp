@@ -1,96 +1,9 @@
 import { NextResponse } from "next/server";
 import { getDynamoDbClient, getS3Client, getAwsRuntimeConfig, GetObjectCommand } from "@/lib/aws";
-import { GetItemCommand, QueryCommand } from "@aws-sdk/client-dynamodb";
+import { QueryCommand } from "@aws-sdk/client-dynamodb";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export const revalidate = 0;
-
-function computePercentile(sorted: number[], p: number) {
-  if (sorted.length === 0) return NaN;
-  const idx = Math.round((sorted.length - 1) * p);
-  return sorted[Math.max(0, Math.min(sorted.length - 1, idx))];
-}
-
-function classify(db: number, T_on: number, T_off: number, prev: "on" | "off"): "on" | "off" {
-  const tolDb = Number(process.env.THRESH_TOL_DB || 0.5);
-  if (db >= T_on - tolDb) return "on";
-  if (db <= T_off + tolDb) return "off";
-  return prev;
-}
-
-async function streamToBuffer(stream: any): Promise<Buffer> {
-  return await new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    // Node stream
-    stream?.on?.("data", (c: Buffer) => chunks.push(c));
-    stream?.on?.("error", reject);
-    stream?.on?.("end", () => resolve(Buffer.concat(chunks)));
-    // Web stream (in some runtimes)
-    if (typeof stream === "object" && typeof stream.getReader === "function") {
-      (async () => {
-        try {
-          const reader = stream.getReader();
-          const acc: Buffer[] = [];
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            acc.push(Buffer.from(value));
-          }
-          resolve(Buffer.concat(acc));
-        } catch (e) {
-          reject(e);
-        }
-      })();
-    }
-  });
-}
-
-function parseWavHeader(buf: Buffer) {
-  if (buf.length < 44) return null;
-  if (buf.toString("ascii", 0, 4) !== "RIFF") return null;
-  if (buf.toString("ascii", 8, 12) !== "WAVE") return null;
-  let offset = 12;
-  let fmt: { audioFormat: number; numChannels: number; sampleRate: number; bitsPerSample: number } | null = null;
-  let dataOffset: number | null = null;
-  while (offset + 8 <= buf.length) {
-    const id = buf.toString("ascii", offset, offset + 4);
-    const size = buf.readUInt32LE(offset + 4);
-    const chunkStart = offset + 8;
-    if (id === "fmt ") {
-      const audioFormat = buf.readUInt16LE(chunkStart);
-      const numChannels = buf.readUInt16LE(chunkStart + 2);
-      const sampleRate = buf.readUInt32LE(chunkStart + 4);
-      const bitsPerSample = buf.readUInt16LE(chunkStart + 14);
-      fmt = { audioFormat, numChannels, sampleRate, bitsPerSample };
-    } else if (id === "data") {
-      dataOffset = chunkStart;
-      break;
-    }
-    offset = chunkStart + size;
-  }
-  if (!fmt || dataOffset == null) return null;
-  return { sampleRate: fmt.sampleRate, channels: fmt.numChannels, bitsPerSample: fmt.bitsPerSample, dataOffset };
-}
-
-function computeDbfsFromPcm16(buf: Buffer, channels: number) {
-  const bytesPerSample = 2;
-  const frameSize = bytesPerSample * channels;
-  let sumSq = 0;
-  let count = 0;
-  for (let i = 0; i + frameSize <= buf.length; i += frameSize) {
-    let acc = 0;
-    for (let ch = 0; ch < channels; ch++) {
-      const s = buf.readInt16LE(i + ch * bytesPerSample);
-      acc += s / 32768;
-    }
-    const v = acc / channels;
-    sumSq += v * v;
-    count++;
-  }
-  const rms = Math.sqrt(sumSq / Math.max(1, count));
-  const dbfs = 20 * Math.log10(Math.max(rms, 1e-9));
-  return { rms, dbfs };
-}
 
 export async function GET() {
   try {
@@ -99,196 +12,94 @@ export async function GET() {
       return NextResponse.json({ error: "AUDIO_TABLE_NAME is not set" }, { status: 500 });
     }
 
-    // Diagnostics: config snapshot
-    // eslint-disable-next-line no-console
     console.log("[AUDIO_DIAG] config", {
       table: awsConfig.audioTableName,
       bucket: awsConfig.bucketName,
       prefix: awsConfig.audioPrefix,
-      hasRegion: !!(process.env.OTOMONI_REGION || process.env.AWS_REGION),
-      usingOTM: !!(process.env.OTOMONI_ACCESS_KEY_ID && process.env.OTOMONI_SECRET_ACCESS_KEY),
     });
 
-    // 最新10件を降順で取得
     const ddb = getDynamoDbClient();
     const s3 = getS3Client();
 
+    // 最新10件を降順で取得
     const query = new QueryCommand({
       TableName: awsConfig.audioTableName,
       KeyConditionExpression: "pk = :p",
       ExpressionAttributeValues: { ":p": { S: "AUDIO" } },
-      ScanIndexForward: false, // 降順
+      ScanIndexForward: false,
       Limit: 10,
     });
-    let res;
-    try {
-      res = await ddb.send(query);
-      // eslint-disable-next-line no-console
-      console.log("[AUDIO_DIAG] ddb.query.ok", { count: (res.Items ?? []).length });
-    } catch (e: any) {
-      // eslint-disable-next-line no-console
-      console.error("[AUDIO_DIAG] ddb.query.error", { name: e?.name, message: e?.message, stack: e?.stack });
-      throw e;
-    }
 
-    // 補助: 閾値用の広め取得（最大300件）
-    const threshQuery = new QueryCommand({
-      TableName: awsConfig.audioTableName,
-      KeyConditionExpression: "pk = :p",
-      ExpressionAttributeValues: { ":p": { S: "AUDIO" } },
-      ScanIndexForward: false,
-      Limit: 300,
-    });
-    const threshRes = await ddb.send(threshQuery);
+    const res = await ddb.send(query);
+    console.log("[AUDIO_DIAG] ddb.query.ok", { count: (res.Items ?? []).length });
 
-    // equipmentId 推定（プレフィックス末尾）
-    const deriveEquipFromKey = (k?: string) => {
-      if (!k) return undefined;
-      const parts = k.split("/").filter(Boolean);
-      return parts.length >= 2 ? parts[parts.length - 2] : undefined;
-    };
-    const defaultEquip = (() => {
-      const parts = (awsConfig.audioPrefix || "").split("/").filter(Boolean);
-      return parts.length ? parts[parts.length - 1] : undefined;
-    })();
-
-    const allForThresh = (threshRes.Items ?? []).map((it) => {
-      const key = it.key?.S as string | undefined;
-      const equip = (it.equipmentId?.S as string | undefined) || deriveEquipFromKey(key);
-      const dbfs = it.dbfs?.N ? Number(it.dbfs.N) : NaN;
-      const lastModified = it.lastModified?.S as string | undefined;
-      const ts = lastModified ? Date.parse(lastModified) : NaN;
-      return { dbfs, equipmentId: equip, ts };
-    }).filter((x) => isFinite(x.dbfs) && isFinite(x.ts));
-
-    const equipmentId = defaultEquip || allForThresh[0]?.equipmentId;
-    const cand = allForThresh.filter((x) => !equipmentId || x.equipmentId === equipmentId).slice(0, 200);
-    let thresholds: { T_on: number; T_off: number; center: number; margin: number } | null = null;
-
-    // Manual override first (single volume threshold)
-    if (equipmentId) {
-      try {
-        const cfgItem = await ddb.send(new GetItemCommand({
-          TableName: awsConfig.audioTableName,
-          Key: { pk: { S: "CONFIG" }, sk: { S: `EQUIP#${equipmentId}` } }
-        }));
-        const num = (n?: { N?: string }) => (n?.N ? Number(n.N) : undefined);
-        const manualOnDb = num(cfgItem.Item?.manualOnDb);
-        if (typeof manualOnDb === "number" && isFinite(manualOnDb)) {
-          const hysDb = Number(process.env.THRESH_HYS_DB || 2);
-          thresholds = {
-            T_on: manualOnDb,
-            T_off: manualOnDb - hysDb,
-            center: manualOnDb - hysDb / 2,
-            margin: hysDb,
-          };
-        }
-      } catch {}
-    }
-
-    // If no manual override, compute from percentiles when enough samples
-    if (!thresholds && cand.length >= 20) {
-      let qLow = Number(process.env.THRESH_Q_LOW || 0.35);
-      let qHigh = Number(process.env.THRESH_Q_HIGH || 0.75);
-      let minMarginDb = Number(process.env.THRESH_MARGIN_MIN_DB || 3);
-      let onBiasDb = Number(process.env.THRESH_ON_BIAS_DB || 0.5);
-      const dbs = [...cand.map((x) => x.dbfs)].sort((a, b) => a - b);
-      const pL = computePercentile(dbs, qLow);
-      const pH = computePercentile(dbs, qHigh);
-      const gap = pH - pL;
-      const center = (pL + pH) / 2;
-      const margin = Math.max(minMarginDb, 0.2 * Math.max(0, gap));
-      thresholds = { T_on: center + margin / 2 + onBiasDb, T_off: center - margin / 2, center, margin };
-    }
-
-    let items;
-    try {
-      items = await Promise.all(
-        (res.Items ?? []).map(async (it) => {
+    const items = await Promise.all(
+      (res.Items ?? [])
+        .filter((it) => it.key?.S || it.sk?.S)
+        .map(async (it) => {
           const bucket = (it.bucket?.S ?? awsConfig.bucketName) as string;
-          const key = it.key?.S as string;
-          const size = it.size?.N ? Number(it.size.N) : undefined;
-          const lastModified = it.lastModified?.S as string | undefined;
-          let dbfs = it.dbfs?.N ? Number(it.dbfs.N) : undefined;
-          const equipmentId = it.equipmentId?.S as string | undefined;
+          const key = (it.key?.S || it.sk?.S) as string;
 
-          // Fallback: compute dbfs on the fly for items without dbfs
-          if (typeof dbfs !== "number" && bucket && key) {
-            try {
-              const head = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: "bytes=0-65535" }));
-              const headBuf = await streamToBuffer(head.Body as any);
-              const wav = parseWavHeader(headBuf);
-              if (wav && wav.bitsPerSample === 16) {
-                const seconds = 2;
-                const bytesPerSample = wav.bitsPerSample / 8;
-                const frameSize = bytesPerSample * wav.channels;
-                const samplesNeeded = wav.sampleRate * seconds;
-                const bytesNeeded = samplesNeeded * frameSize;
-                const start = wav.dataOffset;
-                const end = start + bytesNeeded - 1;
-                const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: `bytes=${start}-${end}` }));
-                const buf = await streamToBuffer(obj.Body as any);
-                const { dbfs: d } = computeDbfsFromPcm16(buf, wav.channels);
-                dbfs = d;
-              }
-            } catch {}
+          // keyが空の場合やCONFIGはスキップ
+          if (!key || key.startsWith("CONFIG") || !key.includes("/")) {
+            return null;
           }
 
+          const size = it.size?.N ? Number(it.size.N) : undefined;
+
+          // lastModified を取得、なければファイル名のタイムスタンプから計算
+          let lastModified = it.lastModified?.S as string | undefined;
+          if (!lastModified) {
+            const match = key.match(/rec-(\d+)\./);
+            if (match) {
+              const ts = parseInt(match[1], 10);
+              if (!isNaN(ts)) {
+                lastModified = new Date(ts).toISOString();
+              }
+            }
+          }
+
+          // 推論結果を取得
+          const isAnomaly = it.isAnomaly?.BOOL;
+          const reconstructionError = it.reconstructionError?.N ? Number(it.reconstructionError.N) : undefined;
+          const inferenceThreshold = it.inferenceThreshold?.N ? Number(it.inferenceThreshold.N) : undefined;
+          const inferenceTimestamp = it.inferenceTimestamp?.N ? Number(it.inferenceTimestamp.N) : undefined;
+
+          // 署名付きURL生成
           const signed = await getSignedUrl(
             s3,
             new GetObjectCommand({ Bucket: bucket, Key: key }),
             { expiresIn: 60 * 5 }
           );
-          return { key, url: signed, size, lastModified, dbfs, equipmentId };
+
+          return {
+            key,
+            url: signed,
+            size,
+            lastModified,
+            // 推論結果
+            isAnomaly,
+            reconstructionError,
+            inferenceThreshold,
+            inferenceTimestamp,
+          };
         })
-      );
-      // eslint-disable-next-line no-console
-      console.log("[AUDIO_DIAG] sign.ok", { count: items.length });
-    } catch (e: any) {
-      // eslint-disable-next-line no-console
-      console.error("[AUDIO_DIAG] sign.error", { name: e?.name, message: e?.message, stack: e?.stack });
-      throw e;
-    }
+    );
 
-    // サーバ側ヒステリシスで状態補完（最新→古いの順で来るため、古い順に判定して戻す）
-    let states: ("on" | "off")[] = [];
-    if (thresholds) {
-      const asc = [...items]
-        .map((x, i) => ({ ...x, idx: i }))
-        .sort((a, b) => {
-          const ta = a.lastModified ? Date.parse(a.lastModified) : 0;
-          const tb = b.lastModified ? Date.parse(b.lastModified) : 0;
-          return ta - tb;
-        });
-      let prev: "on" | "off" = (asc[0]?.dbfs ?? thresholds.center) > thresholds.center ? "on" : "off";
-      for (const a of asc) {
-        const db = typeof a.dbfs === "number" ? a.dbfs : thresholds.center;
-        prev = classify(db, thresholds.T_on, thresholds.T_off, prev);
-        states[a.idx] = prev;
-      }
-    }
+    // nullを除外
+    const filteredItems = items.filter((it): it is NonNullable<typeof it> => it !== null);
+    console.log("[AUDIO_DIAG] sign.ok", { count: filteredItems.length });
 
-    const out = items.map((it, i) => ({
-      ...it,
-      state: states[i] ?? undefined,
-    }));
-
-    return NextResponse.json({ items: out, thresholds: thresholds ?? undefined });
+    return NextResponse.json({ items: filteredItems });
   } catch (err: any) {
-    // Emit useful diagnostics to logs for production debugging
-    // Safe subset only (no secrets)
-    // eslint-disable-next-line no-console
+    const cfg = getAwsRuntimeConfig();
     console.error("GET /api/audio/latest failed", {
       message: err?.message,
       name: err?.name,
       stack: err?.stack,
-      hasRegion: !!process.env.OTOMONI_REGION || !!process.env.AWS_REGION,
-      hasKeyId: !!process.env.OTOMONI_ACCESS_KEY_ID,
-      hasSecret: !!process.env.OTOMONI_SECRET_ACCESS_KEY,
-      table: awsConfig.audioTableName,
-      bucket: awsConfig.bucketName,
+      table: cfg.audioTableName,
+      bucket: cfg.bucketName,
     });
     return NextResponse.json({ error: err?.message ?? "unknown" }, { status: 500 });
   }
 }
-

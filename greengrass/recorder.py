@@ -45,7 +45,8 @@ def _clamp_int(v, lo, hi, default):
     return max(lo, min(hi, n))
 
 
-def record_once(bucket: str, prefix: str, device: str, duration_sec: int, thing: str | None) -> str:
+def record_once(bucket: str, prefix: str, device: str, duration_sec: int, thing: str | None) -> dict:
+    """録音を実行し、S3にアップロード後、推論用にローカルIPC通知を発行"""
     os.makedirs("/tmp", exist_ok=True)
     ts = int(time.time() * 1000)
     out_path = f"/tmp/rec-{ts}.flac"
@@ -60,11 +61,29 @@ def record_once(bucket: str, prefix: str, device: str, duration_sec: int, thing:
     print(f"[recorder] uploading to s3://{bucket}/{key}", flush=True)
     s3.upload_file(out_path, bucket, key)
 
+    # 推論コンポーネントへローカルIPC通知（ファイルは推論後に削除される）
+    result = {
+        "filepath": out_path,
+        "s3_bucket": bucket,
+        "s3_key": key,
+        "device_serial": thing or "unknown",
+        "timestamp": ts,
+        "duration_sec": duration_sec,
+    }
     try:
-        os.remove(out_path)
-    except Exception:
-        pass
-    return key
+        ipc.publish_to_topic(topic="audio/recording/ready", publish_message={
+            "jsonMessage": {"message": result}
+        })
+        print(f"[recorder] published to local IPC: audio/recording/ready", flush=True)
+    except Exception as e:
+        print(f"[recorder] failed to publish local IPC: {e}", flush=True)
+        # IPC失敗してもファイルは削除
+        try:
+            os.remove(out_path)
+        except Exception:
+            pass
+
+    return result
 
 
 def publish_ack(thing: str, ok: bool, key: str | None, err: str | None):
@@ -90,8 +109,8 @@ def handle_record(topic: str, payload: dict):
     duration = _clamp_int(payload.get("durationSec", STATE["durationSec"]), 1, 300, STATE["durationSec"]) 
 
     try:
-        key = record_once(bucket, prefix, device, duration, thing)
-        publish_ack(thing, True, key, None)
+        result = record_once(bucket, prefix, device, duration, thing)
+        publish_ack(thing, True, result["s3_key"], None)
     except Exception as e:
         publish_ack(thing, False, None, f"{type(e).__name__}: {e}")
 
@@ -140,9 +159,9 @@ def subscribe_loop():
                 now = time.time()
                 if now >= next_ts:
                     try:
-                        key = record_once(STATE["bucket"], STATE["prefix"], STATE["device"], STATE["durationSec"], STATE.get("thing"))
+                        result = record_once(STATE["bucket"], STATE["prefix"], STATE["device"], STATE["durationSec"], STATE.get("thing"))
                         if STATE.get("thing"):
-                            publish_ack(STATE["thing"], True, key, None)
+                            publish_ack(STATE["thing"], True, result["s3_key"], None)
                     except Exception as e:
                         if STATE.get("thing"):
                             publish_ack(STATE["thing"], False, None, f"{type(e).__name__}: {e}")

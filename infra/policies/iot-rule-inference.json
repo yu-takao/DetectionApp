@@ -1,0 +1,13 @@
+{
+  "sql": "SELECT * FROM 'audio/inference/result'",
+  "ruleDisabled": false,
+  "awsIotSqlVersion": "2016-03-23",
+  "actions": [
+    {
+      "lambda": {
+        "functionArn": "arn:aws:lambda:ap-northeast-1:${AWS_ACCOUNT_ID}:function:inference-result-writer"
+      }
+    }
+  ],
+  "description": "Route inference results to Lambda for DynamoDB storage"
+}

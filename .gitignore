@@ -53,3 +53,21 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Lambda build artifacts
+*.zip
+infra/lambda/**/node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Model artifacts (large files)
+model/saved_model/
+model/*.tflite
+model/*.h5
+
+# Temporary files
+*.tmp
+tmp_*.txt
+query*.json

@@ -44,16 +44,10 @@ async function listAll() {
 async function putItems() {
   let written = 0;
   for (const o of top) {
-    const iso = new Date(o.LastModified).toISOString();
-    const ulid = Math.random().toString(36).slice(2);
+    // sk にはS3のキーをそのまま使用（既存データとの互換性のため）
     const item = {
       pk: { S: "AUDIO" },
-      sk: { S: `${iso}#${ulid}` },
-      bucket: { S: bucket },
-      key: { S: o.Key },
-      size: { N: String(o.Size ?? 0) },
-      contentType: { S: "audio/wav" },
-      lastModified: { S: iso },
+      sk: { S: o.Key },
     };
     await ddb.send(new PutItemCommand({ TableName: tableName, Item: item }));
     written++;

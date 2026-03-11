@@ -1,0 +1,10 @@
+{
+  "name": "inference-result-writer",
+  "version": "1.0.0",
+  "description": "Lambda to write inference results to DynamoDB AudioIndex",
+  "type": "module",
+  "main": "index.mjs",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0"
+  }
+}
