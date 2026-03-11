@@ -4,6 +4,7 @@ node_modules/
 # Next.js
 .next/
 out/
+/build
 
 # Env
 .env*
@@ -13,6 +14,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+.pnpm-debug.log*
 
 # OS
 .DS_Store
@@ -21,36 +23,15 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+.cursor/
 
 # Misc
 coverage/
 dist/
 *.local
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files
-.env*
-
-# vercel
 .vercel
 
-# typescript
+# TypeScript
 *.tsbuildinfo
 next-env.d.ts
 
