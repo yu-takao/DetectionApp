@@ -7,13 +7,17 @@ import {
   Brain,
   Check as CheckIcon,
   CheckCircle2,
+  Clock,
   Command,
   Ear,
   Hexagon,
   Loader2,
   LogOut,
+  Mic,
   PanelLeftClose,
+  Power,
   Save,
+  Send,
   Server,
   Settings,
   User,
@@ -361,7 +365,7 @@ export default function Dashboard() {
                           )}
                         </div>
                         <div className="w-[280px] flex-shrink-0">
-                          <audio controls src={it.url} preload="none" className="w-full h-8" />
+                          <audio controls src={it.url} preload="metadata" className="w-full h-8" />
                         </div>
                       </div>
                     ))}
@@ -371,10 +375,286 @@ export default function Dashboard() {
             )}
 
             {/* 設定 */}
-            {activeSection === "settings" && <InferenceSettings />}
+            {activeSection === "settings" && (
+              <div className="space-y-6">
+                <RecorderSettings />
+                <div className="border-t border-zinc-200" />
+                <InferenceSettings />
+              </div>
+            )}
           </div>
         </div>
       </main>
+    </div>
+  )
+}
+
+// ─── Recorder Settings ───────────────────────────────────────
+
+type RecorderConfig = {
+  enabled: boolean
+  intervalSec: number
+  scheduleStartHour: number
+  scheduleEndHour: number
+  bucket: string
+  prefix: string
+  appliedAt?: number
+}
+
+type SendStatus = "idle" | "sending" | "waiting" | "confirmed" | "error"
+
+function RecorderSettings() {
+  const [enabled, setEnabled] = useState(false)
+  const [intervalSec, setIntervalSec] = useState(3600)
+  const [startHour, setStartHour] = useState(0)
+  const [endHour, setEndHour] = useState(24)
+  const [bucket, setBucket] = useState("recordings-kawasaki-city")
+  const [prefix, setPrefix] = useState("phase1")
+  const [loading, setLoading] = useState(true)
+  const [sendStatus, setSendStatus] = useState<SendStatus>("idle")
+  const [prevAppliedAt, setPrevAppliedAt] = useState<number>(0)
+  const [appliedConfig, setAppliedConfig] = useState<RecorderConfig | null>(null)
+
+  // 初回: デバイスの現在設定を取得
+  useEffect(() => {
+    let aborted = false
+    async function load() {
+      try {
+        const res = await fetch("/api/device/record-config?thing=kawasaki-ras-1", { cache: "no-store" })
+        if (!res.ok || aborted) return
+        const data = await res.json()
+        if (data.config) {
+          const c = data.config as RecorderConfig
+          setEnabled(c.enabled)
+          setIntervalSec(c.intervalSec)
+          setStartHour(c.scheduleStartHour)
+          setEndHour(c.scheduleEndHour)
+          setBucket(c.bucket || "recordings-kawasaki-city")
+          setPrefix(c.prefix || "phase1")
+          setAppliedConfig(c)
+        }
+      } catch { /* ignore */ }
+      finally { if (!aborted) setLoading(false) }
+    }
+    load()
+    return () => { aborted = true }
+  }, [])
+
+  // ACK ポーリング（送信後のみ）
+  useEffect(() => {
+    if (sendStatus !== "waiting") return
+    let aborted = false
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch("/api/device/record-config?thing=kawasaki-ras-1", { cache: "no-store" })
+        if (!res.ok || aborted) return
+        const data = await res.json()
+        if (data.config?.appliedAt && data.config.appliedAt !== prevAppliedAt) {
+          setAppliedConfig(data.config)
+          setSendStatus("confirmed")
+          setTimeout(() => setSendStatus("idle"), 4000)
+        }
+      } catch { /* ignore */ }
+    }, 2000)
+
+    // 30秒でタイムアウト
+    const timeout = setTimeout(() => {
+      if (!aborted) setSendStatus("error")
+    }, 30000)
+
+    return () => { aborted = true; clearInterval(poll); clearTimeout(timeout) }
+  }, [sendStatus, prevAppliedAt])
+
+  async function handleSend() {
+    setSendStatus("sending")
+    // 送信前の appliedAt を記録（デバイス時計ずれ対策: appliedAt の変化で ACK を検出）
+    setPrevAppliedAt(appliedConfig?.appliedAt ?? 0)
+    try {
+      const res = await fetch("/api/device/record-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          thing: "kawasaki-ras-1",
+          enabled,
+          intervalSec,
+          scheduleStartHour: startHour,
+          scheduleEndHour: endHour,
+          bucket,
+          prefix,
+        }),
+      })
+      if (res.ok) {
+        setSendStatus("waiting")
+      } else {
+        setSendStatus("error")
+      }
+    } catch {
+      setSendStatus("error")
+    }
+  }
+
+  const intervalOptions = [
+    { label: "1分", value: 60 },
+    { label: "5分", value: 300 },
+    { label: "10分", value: 600 },
+    { label: "30分", value: 1800 },
+    { label: "1時間", value: 3600 },
+    { label: "3時間", value: 10800 },
+  ]
+
+  const hours = Array.from({ length: 25 }, (_, i) => i)
+
+  const statusLabel = () => {
+    switch (sendStatus) {
+      case "sending": return { text: "送信中...", color: "text-zinc-500", icon: <Loader2 className="h-4 w-4 animate-spin" /> }
+      case "waiting": return { text: "デバイス応答待ち...", color: "text-amber-600", icon: <Loader2 className="h-4 w-4 animate-spin" /> }
+      case "confirmed": return { text: "設定完了", color: "text-emerald-600", icon: <CheckIcon className="h-4 w-4" /> }
+      case "error": return { text: "応答なし — デバイスがオフラインの可能性があります", color: "text-red-500", icon: <AlertCircle className="h-4 w-4" /> }
+      default: return null
+    }
+  }
+
+  const status = statusLabel()
+
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-4">
+        <Mic className="h-3.5 w-3.5 text-violet-500" />
+        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">録音設定</span>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-zinc-400 py-8">
+          <Loader2 className="h-4 w-4 animate-spin" />読み込み中...
+        </div>
+      ) : (
+        <div className="space-y-5 max-w-lg">
+          {/* 録音オンオフ */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-zinc-700 font-medium flex items-center gap-2">
+                <Power className="h-3.5 w-3.5" />
+                録音
+              </label>
+              <p className="text-xs text-zinc-400 mt-0.5">オンにするとスケジュールに従って録音を開始します</p>
+            </div>
+            <button
+              onClick={() => setEnabled(!enabled)}
+              className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${
+                enabled ? "bg-violet-600" : "bg-zinc-300"
+              }`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
+                enabled ? "translate-x-5" : "translate-x-0"
+              }`} />
+            </button>
+          </div>
+
+          {/* 録音間隔 */}
+          <div className="space-y-1.5">
+            <label className="text-xs text-zinc-500 flex items-center gap-1.5">
+              <Clock className="h-3 w-3" />
+              録音間隔
+            </label>
+            <select
+              value={intervalSec}
+              onChange={(e) => setIntervalSec(Number(e.target.value))}
+              className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-lg text-zinc-800 text-sm focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
+            >
+              {intervalOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* スケジュール */}
+          <div className="space-y-1.5">
+            <label className="text-xs text-zinc-500">録音スケジュール（日本時間）</label>
+            <div className="flex items-center gap-3">
+              <select
+                value={startHour}
+                onChange={(e) => setStartHour(Number(e.target.value))}
+                className="flex-1 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-zinc-800 text-sm focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
+              >
+                {hours.slice(0, 24).map((h) => (
+                  <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+                ))}
+              </select>
+              <span className="text-sm text-zinc-400">〜</span>
+              <select
+                value={endHour}
+                onChange={(e) => setEndHour(Number(e.target.value))}
+                className="flex-1 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-zinc-800 text-sm focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
+              >
+                {hours.slice(1).map((h) => (
+                  <option key={h} value={h}>{h === 24 ? "24:00" : `${String(h).padStart(2, "0")}:00`}</option>
+                ))}
+              </select>
+            </div>
+            <p className="text-xs text-zinc-400">0:00〜24:00 で終日録音</p>
+          </div>
+
+          {/* S3 アップロード先 */}
+          <div className="space-y-1.5">
+            <label className="text-xs text-zinc-500">アップロード先 (S3)</label>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-zinc-400 flex-shrink-0">s3://</span>
+              <input
+                type="text"
+                value={bucket}
+                onChange={(e) => setBucket(e.target.value)}
+                placeholder="bucket-name"
+                className="flex-1 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-zinc-800 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
+              />
+              <span className="text-xs text-zinc-400 flex-shrink-0">/</span>
+              <input
+                type="text"
+                value={prefix}
+                onChange={(e) => setPrefix(e.target.value)}
+                placeholder="prefix"
+                className="w-32 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-zinc-800 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
+              />
+              <span className="text-xs text-zinc-400 flex-shrink-0">/{"{thing}"}/ ...</span>
+            </div>
+          </div>
+
+          {/* デバイス適用状況 */}
+          {appliedConfig && sendStatus === "idle" && (
+            <div className="text-xs text-zinc-400 bg-zinc-50 rounded-lg px-3 py-2 border border-zinc-100">
+              現在のデバイス設定: {appliedConfig.enabled ? "録音ON" : "録音OFF"} /
+              {intervalOptions.find(o => o.value === appliedConfig.intervalSec)?.label ?? `${appliedConfig.intervalSec}秒`} /
+              {String(appliedConfig.scheduleStartHour).padStart(2, "0")}:00〜{appliedConfig.scheduleEndHour === 24 ? "24:00" : `${String(appliedConfig.scheduleEndHour).padStart(2, "0")}:00`} /
+              s3://{appliedConfig.bucket}/{appliedConfig.prefix}/
+              {appliedConfig.appliedAt ? ` (${new Date(appliedConfig.appliedAt).toLocaleString("ja-JP")})` : ""}
+            </div>
+          )}
+
+          {/* 送信ボタン + ステータス */}
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleSend}
+              disabled={sendStatus === "sending" || sendStatus === "waiting"}
+              className="inline-flex items-center gap-2 py-2 px-5 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-500 hover:shadow-lg hover:shadow-violet-500/30 active:scale-95 active:bg-violet-700 text-white transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {sendStatus === "sending" || sendStatus === "waiting" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : sendStatus === "confirmed" ? (
+                <CheckIcon className="h-4 w-4" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              デバイスに送信
+            </button>
+
+            {status && (
+              <span className={`inline-flex items-center gap-1.5 text-sm ${status.color}`}>
+                {status.icon}
+                {status.text}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

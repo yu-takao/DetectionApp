@@ -1,87 +1,129 @@
 import { NextRequest } from "next/server";
 import { IoTDataPlaneClient, PublishCommand } from "@aws-sdk/client-iot-data-plane";
-import { fromIni } from "@aws-sdk/credential-providers";
+import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
+import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
+
+// ---- Config ----
+
+const REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "ap-northeast-1";
+const DATA_ENDPOINT = process.env.IOT_DATA_ENDPOINT || process.env.IOT_ENDPOINT || "";
+const CONFIG_TABLE = process.env.RECORDER_CONFIG_TABLE || "RecorderConfig";
+
+function getCredentials() {
+  const inRuntime = !!process.env.AWS_EXECUTION_ENV;
+  const useIniProfile = !inRuntime && !!process.env.AWS_PROFILE;
+  if (useIniProfile) {
+    const { fromIni } = require("@aws-sdk/credential-providers");
+    return fromIni({ profile: process.env.AWS_PROFILE || "trust-kawasaki-city-prod" });
+  }
+  return fromNodeProviderChain();
+}
+
+const credentials = getCredentials();
+
+const iotClient = new IoTDataPlaneClient({
+  region: REGION,
+  endpoint: DATA_ENDPOINT ? `https://${DATA_ENDPOINT}` : undefined,
+  credentials,
+});
+
+const ddbClient = new DynamoDBClient({ region: REGION, credentials });
+
+// ---- GET: デバイスの現在適用済み設定を DynamoDB から取得 ----
+
+export async function GET(req: NextRequest) {
+  const thing = req.nextUrl.searchParams.get("thing") || "kawasaki-ras-1";
+
+  try {
+    const result = await ddbClient.send(
+      new GetItemCommand({
+        TableName: CONFIG_TABLE,
+        Key: {
+          pk: { S: "RECORDER_CONFIG" },
+          sk: { S: thing },
+        },
+      })
+    );
+
+    if (!result.Item) {
+      return Response.json({ config: null, message: "No config ACK received yet" });
+    }
+
+    const item = result.Item;
+    return Response.json({
+      config: {
+        enabled: item.enabled?.BOOL ?? false,
+        intervalSec: Number(item.intervalSec?.N ?? "3600"),
+        scheduleStartHour: Number(item.scheduleStartHour?.N ?? "0"),
+        scheduleEndHour: Number(item.scheduleEndHour?.N ?? "24"),
+        bucket: item.bucket?.S ?? "recordings-kawasaki-city",
+        prefix: item.prefix?.S ?? "phase1",
+        appliedAt: Number(item.appliedAt?.N ?? "0"),
+        thing: item.sk?.S ?? thing,
+      },
+    });
+  } catch (err) {
+    console.error("/api/device/record-config GET error", err);
+    return Response.json({ error: "Failed to read config from DynamoDB" }, { status: 500 });
+  }
+}
+
+// ---- POST: MQTT で設定をデバイスに送信 ----
 
 type ConfigRequest = {
   thing?: string;
   enabled?: boolean;
   intervalSec?: number;
-  durationSec?: number;
+  scheduleStartHour?: number;
+  scheduleEndHour?: number;
   bucket?: string;
   prefix?: string;
-  device?: string;
 };
-
-const REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "ap-northeast-1";
-// 優先: IOT_DATA_ENDPOINT（互換: IOT_ENDPOINT）
-const DATA_ENDPOINT = process.env.IOT_DATA_ENDPOINT || process.env.IOT_ENDPOINT || "";
-const DEFAULT_BUCKET = process.env.RECORD_BUCKET || "recordings-kawasaki-city";
-const DEFAULT_PREFIX = process.env.RECORD_PREFIX || "ras-1";
-
-const inRuntime = !!process.env.AWS_EXECUTION_ENV;
-const useIniProfile = !inRuntime && !!process.env.AWS_PROFILE;
-
-const iotClient = new IoTDataPlaneClient({
-  region: REGION,
-  endpoint: DATA_ENDPOINT ? `https://${DATA_ENDPOINT}` : undefined,
-  ...(useIniProfile ? { credentials: fromIni({ profile: process.env.AWS_PROFILE || "trust-kawasaki-city-prod" }) } : {}),
-});
 
 export async function POST(req: NextRequest) {
   if (!DATA_ENDPOINT) {
-    return new Response(JSON.stringify({ error: "IOT_DATA_ENDPOINT (or IOT_ENDPOINT) is not configured" }), {
-      status: 500,
-      headers: { "content-type": "application/json" },
-    });
+    return Response.json(
+      { error: "IOT_DATA_ENDPOINT is not configured" },
+      { status: 500 }
+    );
   }
 
   const body = (await req.json().catch(() => ({}))) as ConfigRequest;
   const thing = body.thing || "kawasaki-ras-1";
 
-  // clamp helpers
   const clamp = (n: unknown, lo: number, hi: number, def: number) => {
     const v = Number(n);
-    if (Number.isFinite(v)) return Math.max(lo, Math.min(hi, v));
-    return def;
+    return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def;
   };
 
-  // 構成値（提供が無ければ既定を使う）
-  const enabled = typeof body.enabled === "boolean" ? body.enabled : undefined;
-  const intervalSec = body.intervalSec != null ? clamp(body.intervalSec, 0, 86400, 0) : undefined;
-  const durationSec = body.durationSec != null ? clamp(body.durationSec, 1, 300, 10) : undefined;
-  const bucket = body.bucket || DEFAULT_BUCKET;
-  const prefix = body.prefix ?? DEFAULT_PREFIX;
-  const device = body.device; // 省略時はデバイス側の既定を使用
+  const payload: Record<string, unknown> = { thing };
 
-  const topic = `cmd/${thing}/record/config`;
-  const payloadObj: Record<string, unknown> = {
-    thing,
-    bucket,
-    prefix,
-  };
-  if (enabled !== undefined) payloadObj.enabled = enabled;
-  if (intervalSec !== undefined) payloadObj.intervalSec = intervalSec;
-  if (durationSec !== undefined) payloadObj.durationSec = durationSec;
-  if (device) payloadObj.device = device;
+  if (typeof body.enabled === "boolean") payload.enabled = body.enabled;
+  if (body.intervalSec != null) payload.intervalSec = clamp(body.intervalSec, 10, 86400, 3600);
+  if (body.scheduleStartHour != null) payload.scheduleStartHour = clamp(body.scheduleStartHour, 0, 23, 0);
+  if (body.scheduleEndHour != null) payload.scheduleEndHour = clamp(body.scheduleEndHour, 1, 24, 24);
+  if (body.bucket) payload.bucket = body.bucket;
+  if (body.prefix != null) payload.prefix = body.prefix;
 
-  const payload = JSON.stringify(payloadObj);
+  const topic = `cmd/${thing}/recorder/config`;
 
   try {
     await iotClient.send(
-      new PublishCommand({ topic, qos: 1, payload: new TextEncoder().encode(payload) })
+      new PublishCommand({
+        topic,
+        qos: 1,
+        payload: new TextEncoder().encode(JSON.stringify(payload)),
+      })
     );
-    return new Response(JSON.stringify({ ok: true, topic, config: payloadObj }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
+
+    return Response.json({
+      ok: true,
+      topic,
+      sentAt: Date.now(),
+      config: payload,
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("/api/device/record-config error", err);
-    return new Response(JSON.stringify({ error: "Failed to publish record config" }), {
-      status: 500,
-      headers: { "content-type": "application/json" },
-    });
+    console.error("/api/device/record-config POST error", err);
+    return Response.json({ error: "Failed to publish config" }, { status: 500 });
   }
 }
-
-

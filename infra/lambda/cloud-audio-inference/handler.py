@@ -13,6 +13,7 @@ import os
 import time
 import traceback
 import urllib.parse
+from decimal import Decimal
 
 import boto3
 import numpy as np
@@ -139,11 +140,11 @@ def write_result_to_ddb(s3_key, bucket, is_anomaly, mse, threshold, inference_ti
         "sk": s3_key,
         "bucket": bucket,
         "isAnomaly": is_anomaly,
-        "reconstructionError": round(float(mse), 6),
-        "inferenceThreshold": round(float(threshold), 6),
+        "reconstructionError": Decimal(str(round(float(mse), 6))),
+        "inferenceThreshold": Decimal(str(round(float(threshold), 6))),
         "inferenceTimestamp": int(time.time() * 1000),
-        "inferenceTimeMs": round(inference_time_ms, 2),
-        "audioDurationSec": round(audio_duration_sec, 2),
+        "inferenceTimeMs": Decimal(str(round(float(inference_time_ms), 2))),
+        "audioDurationSec": Decimal(str(round(float(audio_duration_sec), 2))),
         "inferenceMode": "cloud",
     }
 
