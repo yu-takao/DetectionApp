@@ -14,6 +14,7 @@ function getJwks() {
 
 export type TokenPayload = {
   sub: string;
+  username: string;
   email: string;
   groups: string[];
 };
@@ -25,6 +26,7 @@ export async function verifyIdToken(token: string): Promise<TokenPayload | null>
     });
     return {
       sub: payload.sub as string,
+      username: (payload["cognito:username"] as string) || "",
       email: (payload.email as string) || "",
       groups: (payload["cognito:groups"] as string[]) || [],
     };

@@ -6,7 +6,7 @@ import { Hexagon, Loader2, Eye, EyeOff } from "lucide-react";
 
 export default function LoginPage() {
   const { login, completeNewPassword } = useAuth();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -19,7 +19,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
 
-    const result = await login(email, password);
+    const result = await login(username, password);
     if (result.success) {
       window.location.href = "/";
       return;
@@ -67,12 +67,12 @@ export default function LoginPage() {
           {!needsNewPassword ? (
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="text-xs font-medium text-zinc-500 mb-1.5 block">メールアドレス</label>
+                <label className="text-xs font-medium text-zinc-500 mb-1.5 block">ユーザー名</label>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="user@example.com"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="ユーザー名を入力"
                   required
                   autoFocus
                   className={inputClass}

@@ -146,8 +146,8 @@ function Sidebar({
                 <User className="w-3 h-3 text-zinc-300" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-medium text-white truncate">{user?.isAdmin ? "管理者" : "ユーザー"}</p>
-                <p className="text-[9px] text-zinc-500 truncate">{user?.email || ""}</p>
+                <p className="text-[11px] font-medium text-white truncate">{user?.username || ""}</p>
+                <p className="text-[9px] text-zinc-500 truncate">{user?.isAdmin ? "管理者" : "ユーザー"}</p>
               </div>
             </div>
           )}

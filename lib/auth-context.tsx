@@ -10,6 +10,7 @@ const userPool = new CognitoUserPool({
 });
 
 type AuthUser = {
+  username: string;
   email: string;
   groups: string[];
   isAdmin: boolean;
@@ -18,7 +19,7 @@ type AuthUser = {
 type AuthContextType = {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; newPasswordRequired?: boolean }>;
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string; newPasswordRequired?: boolean }>;
   completeNewPassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 };
@@ -40,6 +41,7 @@ function parseUser(session: CognitoUserSession): AuthUser {
   const payload = idToken.decodePayload();
   const groups: string[] = payload["cognito:groups"] || [];
   return {
+    username: payload["cognito:username"] || "",
     email: payload.email || "",
     groups,
     isAdmin: groups.includes("admin"),
@@ -79,10 +81,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; error?: string; newPasswordRequired?: boolean }> => {
+  const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string; newPasswordRequired?: boolean }> => {
     return new Promise((resolve) => {
-      const cu = new CognitoUser({ Username: email, Pool: userPool });
-      const authDetails = new AuthenticationDetails({ Username: email, Password: password });
+      const cu = new CognitoUser({ Username: username, Pool: userPool });
+      const authDetails = new AuthenticationDetails({ Username: username, Password: password });
 
       cu.authenticateUser(authDetails, {
         onSuccess: (session) => {
