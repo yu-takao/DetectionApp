@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDynamoDbClient, getS3Client, getAwsRuntimeConfig, GetObjectCommand } from "@/lib/aws";
 import { QueryCommand, GetItemCommand, BatchGetItemCommand } from "@aws-sdk/client-dynamodb";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -6,19 +6,26 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 export const revalidate = 0;
 
 /**
- * GET: 最新の録音データ一覧を返す
+ * GET: 録音データ一覧を返す
  *
- * DDB スキーマ:
- *   AUDIO レコード:   pk="AUDIO",  sk="<timestamp>"  → 音声メタデータ
- *   RESULT レコード:  pk="RESULT#<model_s3_key>", sk="<timestamp>" → モデル別推論結果
- *   CONFIG レコード:  pk="CONFIG", sk="INFERENCE"     → 現在の推論設定
+ * Query params:
+ *   limit  - 1ページの件数 (default 20, max 100)
+ *   cursor - ページネーション用カーソル (前回の nextCursor)
+ *   from   - 開始タイムスタンプ (epoch ms)
+ *   to     - 終了タイムスタンプ (epoch ms)
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const { audioTableName, bucketName } = getAwsRuntimeConfig();
     if (!audioTableName) {
       return NextResponse.json({ error: "AUDIO_TABLE_NAME is not set" }, { status: 500 });
     }
+
+    const params = req.nextUrl.searchParams;
+    const limit = Math.min(Math.max(parseInt(params.get("limit") || "20", 10) || 20, 1), 100);
+    const cursor = params.get("cursor") || undefined;
+    const fromTs = params.get("from") || "1000000000000";
+    const toTs = params.get("to") || "1999999999999";
 
     const ddb = getDynamoDbClient();
     const s3 = getS3Client();
@@ -37,26 +44,33 @@ export async function GET() {
       console.warn("[AUDIO] Config read failed, using default model", e);
     }
 
-    // 2. AUDIO レコードを最新10件取得 (sk 降順)
-    //    新スキーマの sk はエポックミリ秒 (13桁数字) なので範囲指定で旧レコードを除外
-    const queryRes = await ddb.send(new QueryCommand({
+    // 2. AUDIO レコードを取得 (sk 降順)
+    const queryParams: any = {
       TableName: audioTableName,
       KeyConditionExpression: "pk = :pk AND sk BETWEEN :skMin AND :skMax",
       ExpressionAttributeValues: {
         ":pk": { S: "AUDIO" },
-        ":skMin": { S: "1000000000000" },
-        ":skMax": { S: "1999999999999" },
+        ":skMin": { S: fromTs },
+        ":skMax": { S: toTs },
       },
       ScanIndexForward: false,
-      Limit: 10,
-    }));
+      Limit: limit,
+    };
 
-    const audioItems = queryRes.Items ?? [];
-    if (audioItems.length === 0) {
-      return NextResponse.json({ items: [], currentModel });
+    if (cursor) {
+      queryParams.ExclusiveStartKey = { pk: { S: "AUDIO" }, sk: { S: cursor } };
     }
 
-    // 3. 現在のモデルの RESULT レコードを一括取得
+    const queryRes = await ddb.send(new QueryCommand(queryParams));
+
+    const audioItems = queryRes.Items ?? [];
+    const nextCursor = queryRes.LastEvaluatedKey?.sk?.S || null;
+
+    if (audioItems.length === 0) {
+      return NextResponse.json({ items: [], currentModel, nextCursor: null });
+    }
+
+    // 3. 現在のモデルの RESULT レコードを一括取得 (BatchGetItem は最大100件)
     const resultKeys = audioItems.map((item) => ({
       pk: { S: `RESULT#${currentModel}` },
       sk: item.sk!,
@@ -70,6 +84,7 @@ export async function GET() {
     }> = {};
 
     try {
+      // BatchGetItem は最大100件なので分割不要 (limit max=100)
       const batchRes = await ddb.send(new BatchGetItemCommand({
         RequestItems: {
           [audioTableName]: { Keys: resultKeys },
@@ -122,7 +137,7 @@ export async function GET() {
       })
     );
 
-    return NextResponse.json({ items, currentModel });
+    return NextResponse.json({ items, currentModel, nextCursor });
   } catch (err: any) {
     console.error("GET /api/audio/latest failed", {
       message: err?.message,

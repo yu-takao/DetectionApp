@@ -1,12 +1,14 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useState, useCallback, type ReactNode } from "react"
 import {
   Activity,
   AlertCircle,
   Brain,
   Check as CheckIcon,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Command,
   Ear,
@@ -179,22 +181,75 @@ export default function Dashboard() {
     inferenceTimestamp?: number
   }
   const [audioItems, setAudioItems] = useState<AudioItem[]>([])
+  const [audioLoading, setAudioLoading] = useState(false)
+  const [audioFilter, setAudioFilter] = useState<"all" | "normal" | "anomaly">("all")
+  const [audioPageSize, setAudioPageSize] = useState(20)
+  const [audioCursors, setAudioCursors] = useState<(string | null)[]>([null])
+  const [audioPage, setAudioPage] = useState(0)
+  const [audioNextCursor, setAudioNextCursor] = useState<string | null>(null)
+  const [audioPeriod, setAudioPeriod] = useState<"all" | "today" | "3d" | "7d" | "30d">("all")
 
-  // 最新10件の音声リスト取得（10秒ポーリング）
+  const getDateRange = useCallback(() => {
+    if (audioPeriod === "all") return { from: undefined, to: undefined }
+    const now = Date.now()
+    const days = audioPeriod === "today" ? 1 : audioPeriod === "3d" ? 3 : audioPeriod === "7d" ? 7 : 30
+    const from = now - days * 24 * 60 * 60 * 1000
+    return { from: String(from), to: String(now) }
+  }, [audioPeriod])
+
+  const fetchAudio = useCallback(async (cursor: string | null) => {
+    setAudioLoading(true)
+    try {
+      const { from, to } = getDateRange()
+      const q = new URLSearchParams({ limit: String(audioPageSize) })
+      if (cursor) q.set("cursor", cursor)
+      if (from) q.set("from", from)
+      if (to) q.set("to", to)
+      const res = await fetch(`/api/audio/latest?${q}`, { cache: "no-store" })
+      if (!res.ok) return
+      const data = await res.json()
+      if (Array.isArray(data.items)) setAudioItems(data.items)
+      setAudioNextCursor(data.nextCursor ?? null)
+    } catch { /* ignore */ }
+    finally { setAudioLoading(false) }
+  }, [audioPageSize, getDateRange])
+
+  // 初回 + フィルタ変更時にリセット
   useEffect(() => {
-    let aborted = false
-    async function fetchLatest() {
-      try {
-        const res = await fetch("/api/audio/latest", { cache: "no-store" })
-        if (!res.ok) return
-        const data: { items?: AudioItem[] } = await res.json()
-        if (!aborted && Array.isArray(data.items)) setAudioItems(data.items)
-      } catch { /* ignore */ }
-    }
-    fetchLatest()
-    const t = setInterval(fetchLatest, 10000)
-    return () => { aborted = true; clearInterval(t) }
-  }, [])
+    setAudioPage(0)
+    setAudioCursors([null])
+    fetchAudio(null)
+  }, [audioPageSize, audioPeriod, fetchAudio])
+
+  // 自動更新（1ページ目のみ10秒ポーリング）
+  useEffect(() => {
+    if (audioPage !== 0) return
+    const t = setInterval(() => fetchAudio(null), 10000)
+    return () => clearInterval(t)
+  }, [audioPage, fetchAudio])
+
+  const handleAudioNextPage = () => {
+    if (!audioNextCursor) return
+    const newPage = audioPage + 1
+    const newCursors = [...audioCursors]
+    newCursors[newPage] = audioNextCursor
+    setAudioCursors(newCursors)
+    setAudioPage(newPage)
+    fetchAudio(audioNextCursor)
+  }
+
+  const handleAudioPrevPage = () => {
+    if (audioPage <= 0) return
+    const newPage = audioPage - 1
+    setAudioPage(newPage)
+    fetchAudio(audioCursors[newPage])
+  }
+
+  const filteredAudioItems = audioItems.filter((it) => {
+    if (audioFilter === "normal") return it.isAnomaly === false
+    if (audioFilter === "anomaly") return it.isAnomaly === true
+    return true
+  })
 
   // Heartbeat: センサー死活取得（15秒ポーリング）
   useEffect(() => {
@@ -273,57 +328,43 @@ export default function Dashboard() {
           </div>
 
           {/* Content area */}
-          <div className="bg-zinc-100 rounded-2xl px-6 pb-6 pt-5">
+          <div>
             {/* Dashboard */}
             {activeSection === "dashboard" && (
-              <div className="space-y-5">
-                {/* センサー＋アラート横並び */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">接続センサー</span>
-                      <Server className="h-3.5 w-3.5 text-zinc-400" />
-                    </div>
-                    <div className="space-y-2">
-                      {devicesStatus.map((device) => (
-                        <div key={device.name} className="flex items-center justify-between">
-                          <span className="text-sm text-zinc-700">{device.name}</span>
-                          {device.online ? (
-                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              Active
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400">
-                              <span className="h-1.5 w-1.5 rounded-full bg-zinc-300" />
-                              Offline
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 接続端末 */}
+                <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl px-6 py-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Server className="h-3.5 w-3.5 text-zinc-400" />
+                    <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">接続端末</span>
                   </div>
-
-                  <div className="md:col-span-2">
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">アラート</span>
-                    </div>
-                    <div className="flex items-center gap-2.5 text-sm text-emerald-600">
-                      <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-                      <span>異常は検出されていません &mdash; 設備は正常に稼働しています。</span>
-                    </div>
+                  <div className="space-y-2">
+                    {devicesStatus.map((device) => (
+                      <div key={device.name} className="flex items-center justify-between">
+                        <span className="text-sm text-zinc-700 font-medium">{device.name}</span>
+                        {device.online ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 bg-zinc-100 px-2.5 py-1 rounded-full">
+                            <span className="h-1.5 w-1.5 rounded-full bg-zinc-300" />
+                            Offline
+                          </span>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
 
-                <div className="border-t border-zinc-200" />
-
-                {/* チャート */}
-                <div>
-                  <div className="flex items-center gap-1.5 mb-3">
+                {/* 稼働音状況 */}
+                <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl px-6 py-4">
+                  <div className="flex items-center gap-2 mb-3">
                     <Activity className="h-3.5 w-3.5 text-zinc-400" />
                     <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">稼働音状況</span>
                   </div>
-                  <div className="h-40 flex items-center justify-center text-sm text-zinc-400">
+                  <div className="h-32 flex items-center justify-center text-sm text-zinc-400">
                     データを蓄積中...
                   </div>
                 </div>
@@ -332,54 +373,121 @@ export default function Dashboard() {
 
             {/* 音確認 */}
             {activeSection === "sound" && (
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">録音データ</span>
-                  <span className="text-xs text-zinc-400">{audioItems.length} 件</span>
-                </div>
-                {audioItems.length === 0 ? (
-                  <div className="py-12 text-sm text-zinc-400 text-center">
-                    まだデータがありません。新しい録音が追加されると自動で表示されます。
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {audioItems.map((it, idx) => (
-                      <div key={`${it.key}-${idx}`} className="flex items-center gap-4 px-4 py-3 rounded-lg bg-white border border-zinc-200">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-zinc-700 font-medium">{formatIsoLocal(it.lastModified)}</span>
-                            {it.isAnomaly === true && (
-                              <span className="text-xs font-medium px-2 py-0.5 rounded bg-red-50 text-red-600">異常検知</span>
-                            )}
-                            {it.isAnomaly === false && (
-                              <span className="text-xs font-medium px-2 py-0.5 rounded bg-emerald-50 text-emerald-600">正常</span>
-                            )}
-                            {it.isAnomaly === undefined && (
-                              <span className="text-xs font-medium px-2 py-0.5 rounded bg-zinc-200/60 text-zinc-400">未判定</span>
-                            )}
-                          </div>
-                          {typeof it.reconstructionError === "number" && (
-                            <div className="text-xs text-zinc-400 mt-0.5 font-mono">
-                              MSE: {it.reconstructionError.toFixed(4)} / 閾値: {it.inferenceThreshold?.toFixed(1) ?? "5.0"}
-                            </div>
-                          )}
-                        </div>
-                        <div className="w-[280px] flex-shrink-0">
-                          <audio controls src={it.url} preload="metadata" className="w-full h-8" />
-                        </div>
-                      </div>
+              <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl overflow-hidden">
+                {/* ヘッダー: フィルタ */}
+                <div className="flex items-center justify-between gap-3 px-6 py-3.5 border-b border-zinc-200/60">
+                  <div className="flex items-center gap-2">
+                    {([["all", "すべて"], ["normal", "正常"], ["anomaly", "異常"]] as const).map(([val, label]) => (
+                      <button
+                        key={val}
+                        onClick={() => setAudioFilter(val)}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                          audioFilter === val
+                            ? "bg-zinc-800 text-white"
+                            : "text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100"
+                        }`}
+                      >
+                        {label}
+                      </button>
                     ))}
                   </div>
-                )}
+                  <div className="flex items-center gap-2">
+                    {audioLoading && <Loader2 className="h-3 w-3 animate-spin text-zinc-400" />}
+                    <select
+                      value={audioPeriod}
+                      onChange={(e) => setAudioPeriod(e.target.value as typeof audioPeriod)}
+                      className="px-2 py-1 bg-transparent text-xs text-zinc-500 focus:outline-none cursor-pointer"
+                    >
+                      <option value="all">全期間</option>
+                      <option value="today">24時間</option>
+                      <option value="3d">3日間</option>
+                      <option value="7d">7日間</option>
+                      <option value="30d">30日間</option>
+                    </select>
+                    <select
+                      value={audioPageSize}
+                      onChange={(e) => setAudioPageSize(Number(e.target.value))}
+                      className="px-2 py-1 bg-transparent text-xs text-zinc-500 focus:outline-none cursor-pointer"
+                    >
+                      {[10, 20, 50, 100].map((n) => (
+                        <option key={n} value={n}>{n}件</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* データ一覧 */}
+                <div className="px-6">
+                  {filteredAudioItems.length === 0 ? (
+                    <div className="py-16 text-sm text-zinc-400 text-center">
+                      {audioItems.length === 0
+                        ? "まだデータがありません。新しい録音が追加されると自動で表示されます。"
+                        : "該当するデータがありません。"}
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-zinc-200/60">
+                      {filteredAudioItems.map((it, idx) => (
+                        <div key={`${it.key}-${idx}`} className="flex items-center gap-4 py-3.5">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-zinc-700 font-medium">{formatIsoLocal(it.lastModified)}</span>
+                              {it.isAnomaly === true && (
+                                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-600">異常検知</span>
+                              )}
+                              {it.isAnomaly === false && (
+                                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600">正常</span>
+                              )}
+                              {it.isAnomaly === undefined && (
+                                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-200/60 text-zinc-400">未判定</span>
+                              )}
+                            </div>
+                            {typeof it.reconstructionError === "number" && (
+                              <div className="text-xs text-zinc-400 mt-1 font-mono">
+                                異常度: {it.reconstructionError.toFixed(2)} / 閾値: {it.inferenceThreshold?.toFixed(2) ?? "5.00"}
+                              </div>
+                            )}
+                          </div>
+                          <div className="w-[280px] flex-shrink-0">
+                            <audio controls src={it.url} preload="metadata" className="w-full h-8" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* フッター: ページネーション */}
+                <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-200/60 text-xs text-zinc-400">
+                  <span>ページ {audioPage + 1}</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={handleAudioPrevPage}
+                      disabled={audioPage === 0}
+                      className="p-1.5 rounded-md hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={handleAudioNextPage}
+                      disabled={!audioNextCursor}
+                      className="p-1.5 rounded-md hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
             {/* 設定 */}
             {activeSection === "settings" && (
-              <div className="space-y-6">
-                <RecorderSettings />
-                <div className="border-t border-zinc-200" />
-                <InferenceSettings />
+              <div className="space-y-4">
+                <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl px-6 py-5">
+                  <RecorderSettings />
+                </div>
+                <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl px-6 py-5">
+                  <InferenceSettings />
+                </div>
               </div>
             )}
           </div>

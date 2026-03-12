@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
-import { fromIni } from "@aws-sdk/credential-providers";
+import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 
 type HeartbeatResponse = {
   thingName: string;
@@ -19,16 +19,11 @@ const FALLBACK_CACHE_TTL_MS = Number(process.env.HEARTBEAT_FALLBACK_CACHE_TTL_MS
 // 認証ポリシー:
 // - 本番(Amplify/SSR=AWS_EXECUTION_ENVあり): デフォルトプロバイダチェーンに委ねる（実行ロール）
 // - ローカル: AWS_PROFILE があれば fromIni を使用
-const inRuntime = !!process.env.AWS_EXECUTION_ENV;
-const useIniProfile = !inRuntime && !!process.env.AWS_PROFILE;
-
 function createDdbClient() {
   return DynamoDBDocumentClient.from(
     new DynamoDBClient({
       region: REGION,
-      ...(useIniProfile
-        ? { credentials: fromIni({ profile: process.env.AWS_PROFILE || "trust-kawasaki-city-prod" }) }
-        : {}),
+      credentials: fromNodeProviderChain(),
     })
   );
 }
@@ -168,7 +163,7 @@ export async function GET(req: NextRequest) {
     if (message.includes("ExpiredToken")) {
       try {
         // 実行環境に静的AWSクレデンシャルが残っている場合はクリアし、ロール認証へ誘導
-        if (inRuntime) {
+        if (process.env.AWS_EXECUTION_ENV) {
           try {
             delete (process.env as any).AWS_ACCESS_KEY_ID;
             delete (process.env as any).AWS_SECRET_ACCESS_KEY;
