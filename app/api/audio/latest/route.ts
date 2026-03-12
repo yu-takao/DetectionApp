@@ -46,7 +46,11 @@ export async function GET() {
       Limit: 10,
     }));
 
-    const audioItems = queryRes.Items ?? [];
+    // 旧スキーマ (sk=S3キー) のレコードを除外し、新スキーマ (sk=timestamp) のみ使用
+    const audioItems = (queryRes.Items ?? []).filter((item) => {
+      const sk = item.sk?.S;
+      return sk && /^\d+$/.test(sk);
+    });
     if (audioItems.length === 0) {
       return NextResponse.json({ items: [], currentModel });
     }
