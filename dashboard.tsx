@@ -855,7 +855,8 @@ function RecorderSettings() {
         setSendStatus("waiting")
       } else {
         const data = await res.json().catch(() => ({}))
-        setSendErrorDetail(data.error || `HTTP ${res.status}`)
+        const dbg = data.debug ? ` [${JSON.stringify(data.debug)}]` : ""
+        setSendErrorDetail((data.error || `HTTP ${res.status}`) + dbg)
         setSendStatus("error")
       }
     } catch (e: any) {

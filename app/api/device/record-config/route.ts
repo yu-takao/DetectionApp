@@ -93,6 +93,7 @@ export async function POST(req: NextRequest) {
   const topic = `cmd/${thing}/recorder/config`;
 
   try {
+    const hasOtomoniCreds = !!(process.env.OTOMONI_ACCESS_KEY_ID && process.env.OTOMONI_SECRET_ACCESS_KEY);
     const iot = getIotDataClient();
     await iot.send(
       new PublishCommand({
@@ -110,7 +111,12 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("/api/device/record-config POST error", err);
+    const hasOtomoniCreds = !!(process.env.OTOMONI_ACCESS_KEY_ID && process.env.OTOMONI_SECRET_ACCESS_KEY);
+    const akidPrefix = process.env.OTOMONI_ACCESS_KEY_ID?.slice(0, 8) || "N/A";
     const detail = [err?.name, err?.message, err?.$metadata?.httpStatusCode].filter(Boolean).join(" | ");
-    return Response.json({ error: detail || "Failed to publish config" }, { status: 500 });
+    return Response.json({
+      error: detail || "Failed to publish config",
+      debug: { endpoint: iotEndpoint, hasOtomoniCreds, akidPrefix, topic },
+    }, { status: 500 });
   }
 }
