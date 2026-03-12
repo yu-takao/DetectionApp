@@ -34,16 +34,23 @@ export async function GET() {
 
     console.log("[AUDIO_DIAG] config", { bucket: audioBucket, prefix: audioPrefix });
 
-    // S3 からファイル一覧を取得（最新順にするためタイムスタンプでソート）
-    const listRes = await s3.send(new ListObjectsV2Command({
-      Bucket: audioBucket,
-      Prefix: audioPrefix,
-      MaxKeys: 50,
-    }));
+    // S3 からファイル一覧を全件取得し、キー名降順（=最新順）で10件取得
+    let allObjects: { Key?: string; Size?: number; LastModified?: Date }[] = [];
+    let continuationToken: string | undefined;
+    do {
+      const listRes = await s3.send(new ListObjectsV2Command({
+        Bucket: audioBucket,
+        Prefix: audioPrefix,
+        MaxKeys: 1000,
+        ContinuationToken: continuationToken,
+      }));
+      if (listRes.Contents) allObjects.push(...listRes.Contents);
+      continuationToken = listRes.IsTruncated ? listRes.NextContinuationToken : undefined;
+    } while (continuationToken);
 
-    const objects = (listRes.Contents ?? [])
+    const objects = allObjects
       .filter((obj) => obj.Key && obj.Key.endsWith(".wav"))
-      .sort((a, b) => (b.LastModified?.getTime() ?? 0) - (a.LastModified?.getTime() ?? 0))
+      .sort((a, b) => (b.Key ?? "").localeCompare(a.Key ?? ""))
       .slice(0, 10);
 
     console.log("[AUDIO_DIAG] s3.list.ok", { total: listRes.Contents?.length ?? 0, wav: objects.length });
