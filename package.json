@@ -26,6 +26,7 @@
     "next": "15.2.4",
     "react": "^19",
     "react-dom": "^19",
+    "recharts": "^3.8.0",
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {

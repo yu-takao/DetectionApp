@@ -30,8 +30,9 @@ export async function GET(req: NextRequest) {
     const ddb = getDynamoDbClient();
     const s3 = getS3Client();
 
-    // 1. 現在のモデル設定を取得
+    // 1. 現在のモデル設定 + 閾値を取得
     let currentModel = "models/model-0209.tflite";
+    let currentThreshold = 5.0;
     try {
       const cfgRes = await ddb.send(new GetItemCommand({
         TableName: audioTableName,
@@ -40,8 +41,11 @@ export async function GET(req: NextRequest) {
       if (cfgRes.Item?.modelS3Key?.S) {
         currentModel = cfgRes.Item.modelS3Key.S;
       }
+      if (cfgRes.Item?.anomalyThreshold?.N) {
+        currentThreshold = Number(cfgRes.Item.anomalyThreshold.N);
+      }
     } catch (e) {
-      console.warn("[AUDIO] Config read failed, using default model", e);
+      console.warn("[AUDIO] Config read failed, using defaults", e);
     }
 
     // 2. AUDIO レコードを取得 (sk 降順)
@@ -67,7 +71,7 @@ export async function GET(req: NextRequest) {
     const nextCursor = queryRes.LastEvaluatedKey?.sk?.S || null;
 
     if (audioItems.length === 0) {
-      return NextResponse.json({ items: [], currentModel, nextCursor: null });
+      return NextResponse.json({ items: [], currentModel, currentThreshold, nextCursor: null });
     }
 
     // 3. 現在のモデルの RESULT レコードを一括取得 (BatchGetItem は最大100件)
@@ -137,7 +141,7 @@ export async function GET(req: NextRequest) {
       })
     );
 
-    return NextResponse.json({ items, currentModel, nextCursor });
+    return NextResponse.json({ items, currentModel, currentThreshold, nextCursor });
   } catch (err: any) {
     console.error("GET /api/audio/latest failed", {
       message: err?.message,

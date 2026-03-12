@@ -1,15 +1,14 @@
 "use client"
 
-import { useEffect, useState, useCallback, type ReactNode } from "react"
+import { useEffect, useState, useCallback, useMemo, type ReactNode } from "react"
 import {
-  Activity,
   AlertCircle,
+  AlertTriangle,
   Brain,
   Check as CheckIcon,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Clock,
   Command,
   Ear,
   Hexagon,
@@ -17,13 +16,27 @@ import {
   LogOut,
   Mic,
   PanelLeftClose,
-  Power,
   Save,
   Send,
   Server,
   Settings,
+  TrendingUp,
   User,
+  Wifi,
+  WifiOff,
 } from "lucide-react"
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ReferenceLine,
+  Area,
+  AreaChart,
+} from "recharts"
 
 // ─── Sidebar ────────────────────────────────────────────────
 
@@ -209,6 +222,7 @@ export default function Dashboard() {
       if (!res.ok) return
       const data = await res.json()
       if (Array.isArray(data.items)) setAudioItems(data.items)
+      if (typeof data.currentThreshold === "number") setCurrentThreshold(data.currentThreshold)
       setAudioNextCursor(data.nextCursor ?? null)
     } catch { /* ignore */ }
     finally { setAudioLoading(false) }
@@ -245,12 +259,6 @@ export default function Dashboard() {
     fetchAudio(audioCursors[newPage])
   }
 
-  const filteredAudioItems = audioItems.filter((it) => {
-    if (audioFilter === "normal") return it.isAnomaly === false
-    if (audioFilter === "anomaly") return it.isAnomaly === true
-    return true
-  })
-
   // Heartbeat: センサー死活取得（15秒ポーリング）
   useEffect(() => {
     let aborted = false
@@ -271,6 +279,81 @@ export default function Dashboard() {
     const t = setInterval(fetchHeartbeat, 15000)
     return () => { aborted = true; clearInterval(t) }
   }, [])
+
+  // 現在の閾値（APIから取得、表示判定に使用）
+  const [currentThreshold, setCurrentThreshold] = useState(5.0)
+
+  // 現在の閾値で再評価する関数
+  const isAnomalyNow = useCallback((it: AudioItem) => {
+    if (typeof it.reconstructionError !== "number") return undefined
+    return it.reconstructionError >= currentThreshold
+  }, [currentThreshold])
+
+  const filteredAudioItems = audioItems.filter((it) => {
+    const anomaly = isAnomalyNow(it)
+    if (audioFilter === "normal") return anomaly === false
+    if (audioFilter === "anomaly") return anomaly === true
+    return true
+  })
+
+  // Dashboard: 直近100件を取得（チャート + 異音一覧用）
+  const [dashItems, setDashItems] = useState<AudioItem[]>([])
+  const [dashLoading, setDashLoading] = useState(false)
+  const [dashPeriod, setDashPeriod] = useState<"today" | "3d" | "7d" | "30d">("7d")
+
+  const fetchDashData = useCallback(async () => {
+    setDashLoading(true)
+    try {
+      const now = Date.now()
+      const days = dashPeriod === "today" ? 1 : dashPeriod === "3d" ? 3 : dashPeriod === "7d" ? 7 : 30
+      const from = now - days * 24 * 60 * 60 * 1000
+      const q = new URLSearchParams({ limit: "100", from: String(from), to: String(now) })
+      const res = await fetch(`/api/audio/latest?${q}`, { cache: "no-store" })
+      if (!res.ok) return
+      const data = await res.json()
+      if (Array.isArray(data.items)) setDashItems(data.items)
+      if (typeof data.currentThreshold === "number") setCurrentThreshold(data.currentThreshold)
+    } catch { /* ignore */ }
+    finally { setDashLoading(false) }
+  }, [dashPeriod])
+
+  useEffect(() => {
+    fetchDashData()
+  }, [fetchDashData])
+
+  useEffect(() => {
+    const t = setInterval(fetchDashData, 30000)
+    return () => clearInterval(t)
+  }, [fetchDashData])
+
+  // Dashboard stats (現在の閾値で再評価)
+  const dashStats = useMemo(() => {
+    const withScore = dashItems.filter(it => typeof it.reconstructionError === "number")
+    const anomalies = withScore.filter(it => it.reconstructionError! >= currentThreshold)
+    return { anomalies: anomalies.length }
+  }, [dashItems, currentThreshold])
+
+  // Chart data (chronological order, 現在の閾値で再評価)
+  const chartData = useMemo(() => {
+    return dashItems
+      .filter(it => typeof it.reconstructionError === "number")
+      .map(it => ({
+        time: new Date(it.lastModified!).getTime(),
+        label: new Date(it.lastModified!).toLocaleString("ja-JP", {
+          month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+        }),
+        score: Number(it.reconstructionError!.toFixed(2)),
+        isAnomaly: it.reconstructionError! >= currentThreshold,
+      }))
+      .sort((a, b) => a.time - b.time)
+  }, [dashItems, currentThreshold])
+
+  // Anomaly items for list (現在の閾値で再評価, newest first)
+  const anomalyItems = useMemo(() => {
+    return dashItems.filter(it =>
+      typeof it.reconstructionError === "number" && it.reconstructionError >= currentThreshold
+    )
+  }, [dashItems, currentThreshold])
 
   const formatIsoLocal = (iso?: string) => {
     if (!iso) return ""
@@ -331,51 +414,195 @@ export default function Dashboard() {
           <div>
             {/* Dashboard */}
             {activeSection === "dashboard" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* 接続端末 */}
-                <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl px-6 py-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Server className="h-3.5 w-3.5 text-zinc-400" />
-                    <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">接続端末</span>
-                  </div>
-                  <div className="space-y-2">
-                    {devicesStatus.map((device) => (
-                      <div key={device.name} className="flex items-center justify-between">
-                        <span className="text-sm text-zinc-700 font-medium">{device.name}</span>
-                        {device.online ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            Active
-                          </span>
+              <div className="space-y-4">
+                {/* Main layout: left sidebar + trend chart */}
+                <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-3">
+                  {/* Left column: 接続端末 + 異音検出 */}
+                  <div className="flex flex-col gap-3">
+                    {/* 接続端末 */}
+                    <div className="bg-zinc-50 rounded-2xl px-5 py-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">接続端末</span>
+                        {devicesStatus[0]?.online ? (
+                          <Wifi className="h-3.5 w-3.5 text-emerald-500" />
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 bg-zinc-100 px-2.5 py-1 rounded-full">
-                            <span className="h-1.5 w-1.5 rounded-full bg-zinc-300" />
-                            Offline
-                          </span>
+                          <WifiOff className="h-3.5 w-3.5 text-zinc-300" />
                         )}
                       </div>
-                    ))}
+                      {devicesStatus.map((device) => (
+                        <div key={device.name} className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className={`h-2 w-2 rounded-full ${device.online ? "bg-emerald-500 animate-pulse" : "bg-zinc-300"}`} />
+                            <span className="text-sm font-medium text-zinc-700">{device.name}</span>
+                          </div>
+                          <span className={`text-[11px] ${device.online ? "text-emerald-600" : "text-zinc-400"}`}>
+                            {device.online ? "Active" : "Offline"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* 異音検出ヘキサゴン */}
+                    <div className="flex-1 flex items-center justify-center">
+                      <div className="relative w-full" style={{ aspectRatio: "100/115" }}>
+                        <svg viewBox="0 0 100 115" className="w-full h-full drop-shadow-sm">
+                          <polygon
+                            points="50,2 95,28 95,87 50,113 5,87 5,28"
+                            className={dashStats.anomalies > 0 ? "fill-red-50 stroke-red-300" : "fill-zinc-50 stroke-zinc-200"}
+                            strokeWidth="1.5"
+                          />
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <span className={`text-xs font-semibold uppercase tracking-wider ${dashStats.anomalies > 0 ? "text-red-400" : "text-zinc-400"}`}>異音検出</span>
+                          <span className={`text-4xl font-bold leading-none mt-1.5 ${dashStats.anomalies > 0 ? "text-red-600" : "text-zinc-800"}`}>{dashStats.anomalies}<span className="text-base font-medium ml-0.5">件</span></span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Right column: Trend chart */}
+                  <div className="overflow-hidden">
+                  <div className="flex items-center justify-between px-5 py-3.5">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="h-3.5 w-3.5 text-zinc-400" />
+                      <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">異常度トレンド</span>
+                      {dashLoading && <Loader2 className="h-3 w-3 animate-spin text-zinc-400" />}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {(["today", "3d", "7d", "30d"] as const).map((p) => {
+                        const labels = { today: "24h", "3d": "3日", "7d": "7日", "30d": "30日" }
+                        return (
+                          <button
+                            key={p}
+                            onClick={() => setDashPeriod(p)}
+                            className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
+                              dashPeriod === p
+                                ? "bg-zinc-800 text-white"
+                                : "text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100"
+                            }`}
+                          >
+                            {labels[p]}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div className="px-5 py-4">
+                    {chartData.length === 0 ? (
+                      <div className="h-56 flex items-center justify-center text-sm text-zinc-400">
+                        この期間のデータがありません
+                      </div>
+                    ) : (
+                      <div className="h-56">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={chartData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                            <defs>
+                              <linearGradient id="scoreGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.15} />
+                                <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" vertical={false} />
+                            <XAxis
+                              dataKey="label"
+                              tick={{ fontSize: 10, fill: "#a1a1aa" }}
+                              axisLine={{ stroke: "#e4e4e7" }}
+                              tickLine={false}
+                              interval="preserveStartEnd"
+                            />
+                            <YAxis
+                              tick={{ fontSize: 10, fill: "#a1a1aa" }}
+                              axisLine={false}
+                              tickLine={false}
+                              domain={[0, (max: number) => Math.max(max * 1.2, 8)]}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: "#18181b",
+                                border: "none",
+                                borderRadius: "8px",
+                                fontSize: "12px",
+                                color: "#fff",
+                                padding: "8px 12px",
+                              }}
+                              formatter={(value: number) => [`${value.toFixed(2)}`, "異常度"]}
+                              labelStyle={{ color: "#a1a1aa", fontSize: "11px" }}
+                            />
+                            <ReferenceLine
+                              y={currentThreshold}
+                              stroke="#ef4444"
+                              strokeDasharray="6 3"
+                              strokeWidth={1.5}
+                              label={{
+                                value: `閾値 ${currentThreshold.toFixed(1)}`,
+                                position: "right",
+                                fill: "#ef4444",
+                                fontSize: 10,
+                              }}
+                            />
+                            <Area
+                              type="monotone"
+                              dataKey="score"
+                              stroke="#8b5cf6"
+                              strokeWidth={2}
+                              fill="url(#scoreGrad)"
+                              dot={(props: any) => {
+                                const { cx, cy, payload } = props
+                                if (payload.isAnomaly) {
+                                  return <circle key={`dot-${cx}-${cy}`} cx={cx} cy={cy} r={4} fill="#ef4444" stroke="#fff" strokeWidth={2} />
+                                }
+                                return <circle key={`dot-${cx}-${cy}`} cx={cx} cy={cy} r={2.5} fill="#8b5cf6" stroke="none" />
+                              }}
+                              activeDot={{ r: 5, stroke: "#8b5cf6", strokeWidth: 2, fill: "#fff" }}
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </div>
+                </div>
                 </div>
 
-                {/* 稼働音状況 */}
-                <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl px-6 py-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Activity className="h-3.5 w-3.5 text-zinc-400" />
-                    <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">稼働音状況</span>
+                {/* Row 3: Anomaly list (異音がある場合のみ表示) */}
+                {anomalyItems.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 px-1 mb-3">
+                      <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
+                      <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">検出された異音</span>
+                      <span className="text-[10px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{anomalyItems.length}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {anomalyItems.map((it, idx) => (
+                        <div key={`anomaly-${it.key}-${idx}`} className="flex items-center gap-4 px-4 py-3 bg-red-50/60 rounded-xl">
+                          <div className="flex-shrink-0">
+                            <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
+                              <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                            </div>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="text-sm text-zinc-700 font-medium">{formatIsoLocal(it.lastModified)}</span>
+                            {typeof it.reconstructionError === "number" && (
+                              <p className="text-xs text-zinc-400 mt-0.5 font-mono">
+                                異常度: <span className="text-red-500 font-semibold">{it.reconstructionError.toFixed(2)}</span> / 閾値: {currentThreshold.toFixed(2)}
+                              </p>
+                            )}
+                          </div>
+                          <div className="w-[240px] flex-shrink-0">
+                            <audio controls src={it.url} preload="metadata" className="w-full h-8" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="h-32 flex items-center justify-center text-sm text-zinc-400">
-                    データを蓄積中...
-                  </div>
-                </div>
+                )}
               </div>
             )}
 
             {/* 音確認 */}
             {activeSection === "sound" && (
-              <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl overflow-hidden">
+              <div>
                 {/* ヘッダー: フィルタ */}
-                <div className="flex items-center justify-between gap-3 px-6 py-3.5 border-b border-zinc-200/60">
+                <div className="flex items-center justify-between gap-3 px-2 py-3.5">
                   <div className="flex items-center gap-2">
                     {([["all", "すべて"], ["normal", "正常"], ["anomaly", "異常"]] as const).map(([val, label]) => (
                       <button
@@ -417,7 +644,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* データ一覧 */}
-                <div className="px-6">
+                <div className="bg-zinc-50 rounded-2xl px-6">
                   {filteredAudioItems.length === 0 ? (
                     <div className="py-16 text-sm text-zinc-400 text-center">
                       {audioItems.length === 0
@@ -426,24 +653,26 @@ export default function Dashboard() {
                     </div>
                   ) : (
                     <div className="divide-y divide-zinc-200/60">
-                      {filteredAudioItems.map((it, idx) => (
+                      {filteredAudioItems.map((it, idx) => {
+                        const anomaly = isAnomalyNow(it)
+                        return (
                         <div key={`${it.key}-${idx}`} className="flex items-center gap-4 py-3.5">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
                               <span className="text-sm text-zinc-700 font-medium">{formatIsoLocal(it.lastModified)}</span>
-                              {it.isAnomaly === true && (
+                              {anomaly === true && (
                                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-600">異常検知</span>
                               )}
-                              {it.isAnomaly === false && (
+                              {anomaly === false && (
                                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600">正常</span>
                               )}
-                              {it.isAnomaly === undefined && (
+                              {anomaly === undefined && (
                                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-200/60 text-zinc-400">未判定</span>
                               )}
                             </div>
                             {typeof it.reconstructionError === "number" && (
                               <div className="text-xs text-zinc-400 mt-1 font-mono">
-                                異常度: {it.reconstructionError.toFixed(2)} / 閾値: {it.inferenceThreshold?.toFixed(2) ?? "5.00"}
+                                異常度: {it.reconstructionError.toFixed(2)} / 閾値: {currentThreshold.toFixed(2)}
                               </div>
                             )}
                           </div>
@@ -451,13 +680,14 @@ export default function Dashboard() {
                             <audio controls src={it.url} preload="metadata" className="w-full h-8" />
                           </div>
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>
 
                 {/* フッター: ページネーション */}
-                <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-200/60 text-xs text-zinc-400">
+                <div className="flex items-center justify-between px-2 py-3 text-xs text-zinc-400">
                   <span>ページ {audioPage + 1}</span>
                   <div className="flex items-center gap-1.5">
                     <button
@@ -481,13 +711,9 @@ export default function Dashboard() {
 
             {/* 設定 */}
             {activeSection === "settings" && (
-              <div className="space-y-4">
-                <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl px-6 py-5">
-                  <RecorderSettings />
-                </div>
-                <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl px-6 py-5">
-                  <InferenceSettings />
-                </div>
+              <div className="space-y-6">
+                <RecorderSettings />
+                <InferenceSettings />
               </div>
             )}
           </div>
@@ -511,6 +737,21 @@ type RecorderConfig = {
 
 type SendStatus = "idle" | "sending" | "waiting" | "confirmed" | "error"
 
+function SettingRow({ label, description, children }: { label: string; description?: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-6 py-3.5 border-b border-zinc-100 last:border-0">
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium text-zinc-700">{label}</p>
+        {description && <p className="text-[11px] text-zinc-400 mt-0.5">{description}</p>}
+      </div>
+      <div className="flex-shrink-0">{children}</div>
+    </div>
+  )
+}
+
+const selectClass = "px-3 py-1.5 bg-white border border-zinc-200 rounded-lg text-zinc-700 text-[13px] focus:outline-none focus:ring-1 focus:ring-zinc-400/40 focus:border-zinc-400 transition-colors"
+const inputClass = "px-3 py-1.5 bg-white border border-zinc-200 rounded-lg text-zinc-700 text-[13px] font-mono focus:outline-none focus:ring-1 focus:ring-zinc-400/40 focus:border-zinc-400 transition-colors"
+
 function RecorderSettings() {
   const [enabled, setEnabled] = useState(false)
   const [intervalSec, setIntervalSec] = useState(3600)
@@ -523,7 +764,6 @@ function RecorderSettings() {
   const [prevAppliedAt, setPrevAppliedAt] = useState<number>(0)
   const [appliedConfig, setAppliedConfig] = useState<RecorderConfig | null>(null)
 
-  // 初回: デバイスの現在設定を取得
   useEffect(() => {
     let aborted = false
     async function load() {
@@ -548,7 +788,6 @@ function RecorderSettings() {
     return () => { aborted = true }
   }, [])
 
-  // ACK ポーリング（送信後のみ）
   useEffect(() => {
     if (sendStatus !== "waiting") return
     let aborted = false
@@ -564,18 +803,14 @@ function RecorderSettings() {
         }
       } catch { /* ignore */ }
     }, 2000)
-
-    // 30秒でタイムアウト
     const timeout = setTimeout(() => {
       if (!aborted) setSendStatus("error")
     }, 30000)
-
     return () => { aborted = true; clearInterval(poll); clearTimeout(timeout) }
   }, [sendStatus, prevAppliedAt])
 
   async function handleSend() {
     setSendStatus("sending")
-    // 送信前の appliedAt を記録（デバイス時計ずれ対策: appliedAt の変化で ACK を検出）
     setPrevAppliedAt(appliedConfig?.appliedAt ?? 0)
     try {
       const res = await fetch("/api/device/record-config", {
@@ -612,154 +847,105 @@ function RecorderSettings() {
 
   const hours = Array.from({ length: 25 }, (_, i) => i)
 
-  const statusLabel = () => {
-    switch (sendStatus) {
-      case "sending": return { text: "送信中...", color: "text-zinc-500", icon: <Loader2 className="h-4 w-4 animate-spin" /> }
-      case "waiting": return { text: "デバイス応答待ち...", color: "text-amber-600", icon: <Loader2 className="h-4 w-4 animate-spin" /> }
-      case "confirmed": return { text: "設定完了", color: "text-emerald-600", icon: <CheckIcon className="h-4 w-4" /> }
-      case "error": return { text: "応答なし — デバイスがオフラインの可能性があります", color: "text-red-500", icon: <AlertCircle className="h-4 w-4" /> }
-      default: return null
-    }
-  }
+  const hasChanges = appliedConfig ? (
+    enabled !== appliedConfig.enabled ||
+    intervalSec !== appliedConfig.intervalSec ||
+    startHour !== appliedConfig.scheduleStartHour ||
+    endHour !== appliedConfig.scheduleEndHour ||
+    bucket !== (appliedConfig.bucket || "recordings-kawasaki-city") ||
+    prefix !== (appliedConfig.prefix || "phase1")
+  ) : true
 
-  const status = statusLabel()
+  const statusConfig: Record<string, { text: string; color: string; bg: string; icon: ReactNode } | null> = {
+    sending: { text: "送信中...", color: "text-zinc-500", bg: "bg-zinc-50 border-zinc-200", icon: <Loader2 className="h-3.5 w-3.5 animate-spin" /> },
+    waiting: { text: "デバイス応答待ち...", color: "text-amber-600", bg: "bg-amber-50 border-amber-200", icon: <Loader2 className="h-3.5 w-3.5 animate-spin" /> },
+    confirmed: { text: "デバイスに適用されました", color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", icon: <CheckIcon className="h-3.5 w-3.5" /> },
+    error: { text: "応答なし — デバイスがオフラインの可能性があります", color: "text-red-500", bg: "bg-red-50 border-red-200", icon: <AlertCircle className="h-3.5 w-3.5" /> },
+  }
+  const status = statusConfig[sendStatus] ?? null
 
   return (
-    <div>
-      <div className="flex items-center gap-1.5 mb-4">
-        <Mic className="h-3.5 w-3.5 text-violet-500" />
-        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">録音設定</span>
+    <div className="bg-white border border-zinc-200/80 rounded-2xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-6 py-3.5 border-b border-zinc-100 bg-zinc-50/50">
+        <Mic className="h-3.5 w-3.5 text-zinc-500" />
+        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">録音設定</span>
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-zinc-400 py-8">
+        <div className="flex items-center justify-center gap-2 text-sm text-zinc-400 py-12">
           <Loader2 className="h-4 w-4 animate-spin" />読み込み中...
         </div>
       ) : (
-        <div className="space-y-5 max-w-lg">
-          {/* 録音オンオフ */}
-          <div className="flex items-center justify-between">
-            <div>
-              <label className="text-sm text-zinc-700 font-medium flex items-center gap-2">
-                <Power className="h-3.5 w-3.5" />
-                録音
-              </label>
-              <p className="text-xs text-zinc-400 mt-0.5">オンにするとスケジュールに従って録音を開始します</p>
-            </div>
+        <div className="px-6">
+          <SettingRow label="録音" description="スケジュールに従って録音を実行">
             <button
               onClick={() => setEnabled(!enabled)}
-              className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${
-                enabled ? "bg-violet-600" : "bg-zinc-300"
-              }`}
+              className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 ${enabled ? "bg-violet-500" : "bg-zinc-300"}`}
             >
-              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
-                enabled ? "translate-x-5" : "translate-x-0"
-              }`} />
+              <span className={`absolute top-[3px] left-[3px] w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${enabled ? "translate-x-[18px]" : "translate-x-0"}`} />
             </button>
-          </div>
+          </SettingRow>
 
-          {/* 録音間隔 */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-500 flex items-center gap-1.5">
-              <Clock className="h-3 w-3" />
-              録音間隔
-            </label>
-            <select
-              value={intervalSec}
-              onChange={(e) => setIntervalSec(Number(e.target.value))}
-              className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-lg text-zinc-800 text-sm focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
-            >
+          <SettingRow label="録音間隔">
+            <select value={intervalSec} onChange={(e) => setIntervalSec(Number(e.target.value))} className={selectClass}>
               {intervalOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
-          </div>
+          </SettingRow>
 
-          {/* スケジュール */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-500">録音スケジュール（日本時間）</label>
-            <div className="flex items-center gap-3">
-              <select
-                value={startHour}
-                onChange={(e) => setStartHour(Number(e.target.value))}
-                className="flex-1 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-zinc-800 text-sm focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
-              >
+          <SettingRow label="スケジュール" description="日本時間 (0:00〜24:00 で終日)">
+            <div className="flex items-center gap-2">
+              <select value={startHour} onChange={(e) => setStartHour(Number(e.target.value))} className={selectClass}>
                 {hours.slice(0, 24).map((h) => (
                   <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
                 ))}
               </select>
-              <span className="text-sm text-zinc-400">〜</span>
-              <select
-                value={endHour}
-                onChange={(e) => setEndHour(Number(e.target.value))}
-                className="flex-1 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-zinc-800 text-sm focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
-              >
+              <span className="text-xs text-zinc-400">〜</span>
+              <select value={endHour} onChange={(e) => setEndHour(Number(e.target.value))} className={selectClass}>
                 {hours.slice(1).map((h) => (
                   <option key={h} value={h}>{h === 24 ? "24:00" : `${String(h).padStart(2, "0")}:00`}</option>
                 ))}
               </select>
             </div>
-            <p className="text-xs text-zinc-400">0:00〜24:00 で終日録音</p>
-          </div>
+          </SettingRow>
 
-          {/* S3 アップロード先 */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-500">アップロード先 (S3)</label>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-zinc-400 flex-shrink-0">s3://</span>
-              <input
-                type="text"
-                value={bucket}
-                onChange={(e) => setBucket(e.target.value)}
-                placeholder="bucket-name"
-                className="flex-1 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-zinc-800 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
-              />
-              <span className="text-xs text-zinc-400 flex-shrink-0">/</span>
-              <input
-                type="text"
-                value={prefix}
-                onChange={(e) => setPrefix(e.target.value)}
-                placeholder="prefix"
-                className="w-32 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-zinc-800 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
-              />
-              <span className="text-xs text-zinc-400 flex-shrink-0">/{"{thing}"}/ ...</span>
+          <SettingRow label="アップロード先" description="S3 バケット / プレフィックス">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-zinc-400">s3://</span>
+              <input type="text" value={bucket} onChange={(e) => setBucket(e.target.value)} className={`${inputClass} w-40`} />
+              <span className="text-[11px] text-zinc-400">/</span>
+              <input type="text" value={prefix} onChange={(e) => setPrefix(e.target.value)} className={`${inputClass} w-20`} />
+              <span className="text-[11px] text-zinc-400">/</span>
             </div>
-          </div>
+          </SettingRow>
 
-          {/* デバイス適用状況 */}
-          {appliedConfig && sendStatus === "idle" && (
-            <div className="text-xs text-zinc-400 bg-zinc-50 rounded-lg px-3 py-2 border border-zinc-100">
-              現在のデバイス設定: {appliedConfig.enabled ? "録音ON" : "録音OFF"} /
-              {intervalOptions.find(o => o.value === appliedConfig.intervalSec)?.label ?? `${appliedConfig.intervalSec}秒`} /
-              {String(appliedConfig.scheduleStartHour).padStart(2, "0")}:00〜{appliedConfig.scheduleEndHour === 24 ? "24:00" : `${String(appliedConfig.scheduleEndHour).padStart(2, "0")}:00`} /
-              s3://{appliedConfig.bucket}/{appliedConfig.prefix}/
-              {appliedConfig.appliedAt ? ` (${new Date(appliedConfig.appliedAt).toLocaleString("ja-JP")})` : ""}
+          {/* Footer: status + send button */}
+          <div className="py-4 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              {status ? (
+                <span className={`inline-flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-lg border ${status.bg} ${status.color}`}>
+                  {status.icon}{status.text}
+                </span>
+              ) : appliedConfig?.appliedAt ? (
+                <span className="text-[11px] text-zinc-400">
+                  最終適用: {new Date(appliedConfig.appliedAt).toLocaleString("ja-JP")}
+                </span>
+              ) : null}
             </div>
-          )}
-
-          {/* 送信ボタン + ステータス */}
-          <div className="flex items-center gap-4">
             <button
               onClick={handleSend}
-              disabled={sendStatus === "sending" || sendStatus === "waiting"}
-              className="inline-flex items-center gap-2 py-2 px-5 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-500 hover:shadow-lg hover:shadow-violet-500/30 active:scale-95 active:bg-violet-700 text-white transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!hasChanges || sendStatus === "sending" || sendStatus === "waiting"}
+              className="inline-flex items-center gap-1.5 py-1.5 px-4 rounded-lg text-[13px] font-medium bg-violet-500 hover:bg-violet-400 active:scale-[0.97] text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {sendStatus === "sending" || sendStatus === "waiting" ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : sendStatus === "confirmed" ? (
-                <CheckIcon className="h-4 w-4" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <Send className="h-4 w-4" />
+                <Send className="h-3.5 w-3.5" />
               )}
               デバイスに送信
             </button>
-
-            {status && (
-              <span className={`inline-flex items-center gap-1.5 text-sm ${status.color}`}>
-                {status.icon}
-                {status.text}
-              </span>
-            )}
           </div>
         </div>
       )}
@@ -775,6 +961,8 @@ function InferenceSettings() {
   const [models, setModels] = useState<ModelInfo[]>([])
   const [selectedModel, setSelectedModel] = useState("")
   const [threshold, setThreshold] = useState(5.0)
+  const [initialModel, setInitialModel] = useState("")
+  const [initialThreshold, setInitialThreshold] = useState(5.0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -791,7 +979,9 @@ function InferenceSettings() {
         if (configRes.ok) {
           const cfg = await configRes.json()
           setSelectedModel(cfg.modelS3Key ?? "")
+          setInitialModel(cfg.modelS3Key ?? "")
           setThreshold(cfg.anomalyThreshold ?? 5.0)
+          setInitialThreshold(cfg.anomalyThreshold ?? 5.0)
         }
         if (modelsRes.ok) {
           const data = await modelsRes.json()
@@ -817,6 +1007,8 @@ function InferenceSettings() {
         body: JSON.stringify({ modelS3Key: selectedModel, anomalyThreshold: threshold }),
       })
       if (res.ok) {
+        setInitialModel(selectedModel)
+        setInitialThreshold(threshold)
         setSaved(true)
         setTimeout(() => setSaved(false), 3000)
       }
@@ -827,32 +1019,29 @@ function InferenceSettings() {
     }
   }
 
+  const hasChanges = selectedModel !== initialModel || Math.abs(threshold - initialThreshold) > 0.01
+
   const formatSize = (bytes?: number) => {
     if (!bytes) return ""
     return `${(bytes / 1024).toFixed(0)} KB`
   }
 
   return (
-    <div>
-      <div className="flex items-center gap-1.5 mb-4">
-        <Brain className="h-3.5 w-3.5 text-violet-500" />
-        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">クラウド推論設定</span>
+    <div className="bg-white border border-zinc-200/80 rounded-2xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-6 py-3.5 border-b border-zinc-100 bg-zinc-50/50">
+        <Brain className="h-3.5 w-3.5 text-zinc-500" />
+        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">クラウド推論設定</span>
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-zinc-400 py-8">
+        <div className="flex items-center justify-center gap-2 text-sm text-zinc-400 py-12">
           <Loader2 className="h-4 w-4 animate-spin" />読み込み中...
         </div>
       ) : (
-        <div className="space-y-5 max-w-lg">
-          {/* モデル選択 */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-500 block">推論モデル</label>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-lg text-zinc-800 text-sm focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
-            >
+        <div className="px-6">
+          <SettingRow label="推論モデル" description={selectedModel ? `s3://…/${selectedModel}` : undefined}>
+            <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className={`${selectClass} max-w-[220px]`}>
               {models.length === 0 && <option value="">モデルが見つかりません</option>}
               {models.map((m) => (
                 <option key={m.key} value={m.key}>
@@ -860,49 +1049,52 @@ function InferenceSettings() {
                 </option>
               ))}
             </select>
-            {selectedModel && (
-              <div className="text-xs text-zinc-400 font-mono">
-                s3://recordings-kawasaki-city/{selectedModel}
+          </SettingRow>
+
+          {/* 閾値 */}
+          <div className="py-3.5 border-b border-zinc-100">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-[13px] font-medium text-zinc-700">異常判定閾値</p>
+                <p className="text-[11px] text-zinc-400 mt-0.5">再構成誤差 (MSE) がこの値以上で異常と判定</p>
               </div>
-            )}
-          </div>
-
-          {/* 閾値スライダー */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs text-zinc-500">異常判定閾値 (MSE)</label>
-              <span className="text-sm font-mono text-zinc-800 font-semibold">{threshold.toFixed(1)}</span>
+              <span className="text-sm font-mono font-semibold text-zinc-800 bg-zinc-100 px-2.5 py-0.5 rounded-md">{threshold.toFixed(1)}</span>
             </div>
-            <input
-              type="range"
-              min="0.5"
-              max="20"
-              step="0.1"
-              value={threshold}
-              onChange={(e) => setThreshold(parseFloat(e.target.value))}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs text-zinc-400">
-              <span>0.5 (厳しい)</span>
-              <span>20.0 (緩い)</span>
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] text-zinc-400 flex-shrink-0 w-8 text-right">0.5</span>
+              <input
+                type="range"
+                min="0.5"
+                max="20"
+                step="0.1"
+                value={threshold}
+                onChange={(e) => setThreshold(parseFloat(e.target.value))}
+                className="flex-1 accent-violet-500"
+              />
+              <span className="text-[10px] text-zinc-400 flex-shrink-0 w-8">20.0</span>
+            </div>
+            <div className="flex justify-between text-[10px] text-zinc-400 mt-1 px-11">
+              <span>厳しい</span>
+              <span>緩い</span>
             </div>
           </div>
 
-          {/* 保存ボタン */}
-          <button
-            onClick={handleSave}
-            disabled={saving || !selectedModel}
-            className="inline-flex items-center gap-2 py-2 px-5 rounded-lg text-sm font-medium bg-violet-600 hover:bg-violet-500 hover:shadow-lg hover:shadow-violet-500/30 active:scale-95 active:bg-violet-700 text-white transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : saved ? (
-              <CheckIcon className="h-4 w-4" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            {saved ? "保存しました" : "設定を保存"}
-          </button>
+          {/* Footer */}
+          <div className="py-4 flex items-center justify-between">
+            {saved ? (
+              <span className="inline-flex items-center gap-1.5 text-[12px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                <CheckIcon className="h-3.5 w-3.5" />保存しました
+              </span>
+            ) : <span />}
+            <button
+              onClick={handleSave}
+              disabled={!hasChanges || saving || !selectedModel}
+              className="inline-flex items-center gap-1.5 py-1.5 px-4 rounded-lg text-[13px] font-medium bg-violet-500 hover:bg-violet-400 active:scale-[0.97] text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              設定を保存
+            </button>
+          </div>
         </div>
       )}
     </div>
