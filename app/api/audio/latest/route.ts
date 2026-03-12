@@ -38,19 +38,20 @@ export async function GET() {
     }
 
     // 2. AUDIO レコードを最新10件取得 (sk 降順)
+    //    新スキーマの sk はエポックミリ秒 (13桁数字) なので範囲指定で旧レコードを除外
     const queryRes = await ddb.send(new QueryCommand({
       TableName: audioTableName,
-      KeyConditionExpression: "pk = :pk",
-      ExpressionAttributeValues: { ":pk": { S: "AUDIO" } },
+      KeyConditionExpression: "pk = :pk AND sk BETWEEN :skMin AND :skMax",
+      ExpressionAttributeValues: {
+        ":pk": { S: "AUDIO" },
+        ":skMin": { S: "1000000000000" },
+        ":skMax": { S: "1999999999999" },
+      },
       ScanIndexForward: false,
       Limit: 10,
     }));
 
-    // 旧スキーマ (sk=S3キー) のレコードを除外し、新スキーマ (sk=timestamp) のみ使用
-    const audioItems = (queryRes.Items ?? []).filter((item) => {
-      const sk = item.sk?.S;
-      return sk && /^\d+$/.test(sk);
-    });
+    const audioItems = queryRes.Items ?? [];
     if (audioItems.length === 0) {
       return NextResponse.json({ items: [], currentModel });
     }
