@@ -7,6 +7,11 @@ import { COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID } from "./cognito";
 let _userPool: CognitoUserPool | null = null;
 function getUserPool(): CognitoUserPool {
   if (!_userPool) {
+    if (!COGNITO_USER_POOL_ID || !COGNITO_CLIENT_ID) {
+      throw new Error(
+        `Cognito設定が不足しています: UserPoolId=${COGNITO_USER_POOL_ID ? "OK" : "未設定"}, ClientId=${COGNITO_CLIENT_ID ? "OK" : "未設定"}。Amplify環境変数を確認してください。`
+      );
+    }
     _userPool = new CognitoUserPool({
       UserPoolId: COGNITO_USER_POOL_ID,
       ClientId: COGNITO_CLIENT_ID,
@@ -71,20 +76,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check existing session on mount
   useEffect(() => {
-    const currentUser = getUserPool().getCurrentUser();
-    if (!currentUser) {
-      setLoading(false);
-      return;
-    }
-    currentUser.getSession((err: Error | null, session: CognitoUserSession | null) => {
-      if (err || !session || !session.isValid()) {
+    try {
+      const currentUser = getUserPool().getCurrentUser();
+      if (!currentUser) {
         setLoading(false);
         return;
       }
-      setUser(parseUser(session));
-      setTokenCookie(session);
+      currentUser.getSession((err: Error | null, session: CognitoUserSession | null) => {
+        if (err || !session || !session.isValid()) {
+          setLoading(false);
+          return;
+        }
+        setUser(parseUser(session));
+        setTokenCookie(session);
+        setLoading(false);
+      });
+    } catch (e) {
+      console.error("Auth initialization failed:", e);
       setLoading(false);
-    });
+    }
   }, []);
 
   const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string; newPasswordRequired?: boolean }> => {
