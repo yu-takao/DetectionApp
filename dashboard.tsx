@@ -191,7 +191,7 @@ export default function Dashboard() {
   const [audioItems, setAudioItems] = useState<AudioItem[]>([])
   const [audioLoading, setAudioLoading] = useState(false)
   const [audioFilter, setAudioFilter] = useState<"all" | "normal" | "anomaly">("all")
-  const [audioPageSize, setAudioPageSize] = useState(20)
+  const [audioPageSize, setAudioPageSize] = useState(10)
   const [audioCursors, setAudioCursors] = useState<(string | null)[]>([null])
   const [audioPage, setAudioPage] = useState(0)
   const [audioNextCursor, setAudioNextCursor] = useState<string | null>(null)
