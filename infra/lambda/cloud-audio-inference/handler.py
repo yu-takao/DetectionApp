@@ -4,12 +4,15 @@
 S3にアップロードされた音声ファイル (.wav/.flac) をトリガーに、
 TFLiteモデルで推論し、結果をDynamoDB AudioIndexに書き込む。
 
-推論設定（モデルパス・閾値）はDynamoDB AudioIndex の
-pk=CONFIG, sk=INFERENCE から読み込む。
+DDB スキーマ:
+  AUDIO レコード:   pk="AUDIO",  sk="<timestamp>"  → 音声メタデータ
+  RESULT レコード:  pk="RESULT#<model_s3_key>", sk="<timestamp>" → モデル別推論結果
+  CONFIG レコード:  pk="CONFIG", sk="INFERENCE"     → 現在の推論設定
 """
 
 import json
 import os
+import re
 import time
 import traceback
 import urllib.parse
@@ -133,31 +136,42 @@ def run_inference(interpreter, features):
     return np.array(results)
 
 
-def write_result_to_ddb(s3_key, bucket, is_anomaly, mse, threshold, inference_time_ms, audio_duration_sec):
-    """推論結果をDynamoDB AudioIndexに書き込み（PutItem + 推論フィールド）。"""
+def extract_timestamp(s3_key):
+    """S3キーからタイムスタンプを抽出。"""
+    match = re.search(r"rec-(\d+)\.", s3_key)
+    if match:
+        return match.group(1)
+    return str(int(time.time() * 1000))
+
+
+def write_audio_metadata(s3_key, bucket, size, timestamp):
+    """AUDIO レコード: 音声メタデータを書き込み。"""
     item = {
         "pk": "AUDIO",
-        "sk": s3_key,
+        "sk": timestamp,
+        "s3Key": s3_key,
         "bucket": bucket,
+        "size": size,
+    }
+    table.put_item(Item=item)
+    print(f"[ddb] AUDIO written: sk={timestamp}, s3Key={s3_key}")
+
+
+def write_inference_result(s3_key, model_s3_key, timestamp, is_anomaly, mse, threshold, inference_time_ms):
+    """RESULT レコード: モデル別推論結果を書き込み。"""
+    item = {
+        "pk": f"RESULT#{model_s3_key}",
+        "sk": timestamp,
+        "s3Key": s3_key,
         "isAnomaly": is_anomaly,
         "reconstructionError": Decimal(str(round(float(mse), 6))),
         "inferenceThreshold": Decimal(str(round(float(threshold), 6))),
         "inferenceTimestamp": int(time.time() * 1000),
         "inferenceTimeMs": Decimal(str(round(float(inference_time_ms), 2))),
-        "audioDurationSec": Decimal(str(round(float(audio_duration_sec), 2))),
         "inferenceMode": "cloud",
     }
-
-    # lastModified をファイル名のタイムスタンプから抽出
-    import re
-    match = re.search(r"rec-(\d+)\.", s3_key)
-    if match:
-        ts = int(match.group(1))
-        from datetime import datetime, timezone
-        item["lastModified"] = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat()
-
     table.put_item(Item=item)
-    print(f"[ddb] Written: sk={s3_key}, isAnomaly={is_anomaly}, MSE={mse:.6f}")
+    print(f"[ddb] RESULT written: pk=RESULT#{model_s3_key}, sk={timestamp}, isAnomaly={is_anomaly}, MSE={mse:.6f}")
 
 
 def handler(event, context):
@@ -181,6 +195,7 @@ def handler(event, context):
         bucket = s3_info.get("bucket", {}).get("name", S3_BUCKET)
         raw_key = s3_info.get("object", {}).get("key", "")
         key = urllib.parse.unquote_plus(raw_key)
+        obj_size = s3_info.get("object", {}).get("size", 0)
 
         # 対象ファイルのみ処理
         lower_key = key.lower()
@@ -192,25 +207,31 @@ def handler(event, context):
         start_time = time.time()
 
         try:
-            # 1. S3から音声ファイルをダウンロード
+            # タイムスタンプ抽出
+            timestamp = extract_timestamp(key)
+
+            # 1. AUDIO メタデータを書き込み
+            write_audio_metadata(key, bucket, obj_size, timestamp)
+
+            # 2. S3から音声ファイルをダウンロード
             local_path = f"/tmp/{os.path.basename(key)}"
             s3.download_file(bucket, key, local_path)
 
-            # 2. 音声読み込み
+            # 3. 音声読み込み
             audio, sr = librosa.load(local_path, sr=SAMPLE_RATE, mono=True)
             audio_duration = len(audio) / sr
             print(f"[handler] Audio loaded: {len(audio)} samples, {audio_duration:.2f}s")
 
-            # 3. 特徴抽出
+            # 4. 特徴抽出
             features = extract_features(audio, sr)
             if features.shape[0] == 0:
                 print(f"[handler] No features extracted (audio too short): {key}")
                 continue
 
-            # 4. 推論
+            # 5. 推論
             output = run_inference(interpreter, features)
 
-            # 5. 異常判定（MSE）
+            # 6. 異常判定（MSE）
             mse = float(np.mean(np.square(features - output)))
             is_anomaly = mse > threshold
             inference_time_ms = (time.time() - start_time) * 1000
@@ -218,8 +239,8 @@ def handler(event, context):
             status = "ANOMALY" if is_anomaly else "NORMAL"
             print(f"[handler] Result: {status}, MSE={mse:.6f}, threshold={threshold}, time={inference_time_ms:.0f}ms")
 
-            # 6. DynamoDBに書き込み
-            write_result_to_ddb(key, bucket, is_anomaly, mse, threshold, inference_time_ms, audio_duration)
+            # 7. RESULT レコードを書き込み（モデル別）
+            write_inference_result(key, model_s3_key, timestamp, is_anomaly, mse, threshold, inference_time_ms)
 
             results.append({
                 "key": key,
