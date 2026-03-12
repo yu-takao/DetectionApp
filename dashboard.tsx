@@ -784,6 +784,7 @@ function RecorderSettings() {
   const [prefix, setPrefix] = useState("phase1")
   const [loading, setLoading] = useState(true)
   const [sendStatus, setSendStatus] = useState<SendStatus>("idle")
+  const [sendErrorDetail, setSendErrorDetail] = useState<string>("")
   const [prevAppliedAt, setPrevAppliedAt] = useState<number>(0)
   const [appliedConfig, setAppliedConfig] = useState<RecorderConfig | null>(null)
 
@@ -834,6 +835,7 @@ function RecorderSettings() {
 
   async function handleSend() {
     setSendStatus("sending")
+    setSendErrorDetail("")
     setPrevAppliedAt(appliedConfig?.appliedAt ?? 0)
     try {
       const res = await fetch("/api/device/record-config", {
@@ -852,9 +854,12 @@ function RecorderSettings() {
       if (res.ok) {
         setSendStatus("waiting")
       } else {
+        const data = await res.json().catch(() => ({}))
+        setSendErrorDetail(data.error || `HTTP ${res.status}`)
         setSendStatus("error")
       }
-    } catch {
+    } catch (e: any) {
+      setSendErrorDetail(e?.message || "Network error")
       setSendStatus("error")
     }
   }
@@ -883,7 +888,7 @@ function RecorderSettings() {
     sending: { text: "送信中...", color: "text-zinc-500", bg: "bg-zinc-50 border-zinc-200", icon: <Loader2 className="h-3.5 w-3.5 animate-spin" /> },
     waiting: { text: "デバイス応答待ち...", color: "text-amber-600", bg: "bg-amber-50 border-amber-200", icon: <Loader2 className="h-3.5 w-3.5 animate-spin" /> },
     confirmed: { text: "デバイスに適用されました", color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", icon: <CheckIcon className="h-3.5 w-3.5" /> },
-    error: { text: "応答なし — デバイスがオフラインの可能性があります", color: "text-red-500", bg: "bg-red-50 border-red-200", icon: <AlertCircle className="h-3.5 w-3.5" /> },
+    error: { text: sendErrorDetail ? `エラー: ${sendErrorDetail}` : "応答なし — デバイスがオフラインの可能性があります", color: "text-red-500", bg: "bg-red-50 border-red-200", icon: <AlertCircle className="h-3.5 w-3.5" /> },
   }
   const status = statusConfig[sendStatus] ?? null
 

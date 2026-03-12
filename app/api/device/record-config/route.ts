@@ -40,9 +40,9 @@ export async function GET(req: NextRequest) {
         thing: item.sk?.S ?? thing,
       },
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error("/api/device/record-config GET error", err);
-    return Response.json({ error: "Failed to read config from DynamoDB" }, { status: 500 });
+    return Response.json({ error: err?.message ?? "Failed to read config from DynamoDB" }, { status: 500 });
   }
 }
 
@@ -108,8 +108,8 @@ export async function POST(req: NextRequest) {
       sentAt: Date.now(),
       config: payload,
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error("/api/device/record-config POST error", err);
-    return Response.json({ error: "Failed to publish config" }, { status: 500 });
+    return Response.json({ error: err?.message ?? "Failed to publish config" }, { status: 500 });
   }
 }
