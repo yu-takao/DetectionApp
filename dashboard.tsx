@@ -448,13 +448,13 @@ export default function Dashboard() {
                         <svg viewBox="0 0 100 115" className="w-full h-full drop-shadow-sm">
                           <polygon
                             points="50,2 95,28 95,87 50,113 5,87 5,28"
-                            className={dashStats.anomalies > 0 ? "fill-red-50 stroke-red-300" : "fill-zinc-50 stroke-zinc-200"}
+                            className={dashStats.anomalies > 0 ? "fill-red-50 stroke-red-300" : "fill-emerald-50 stroke-emerald-300"}
                             strokeWidth="1.5"
                           />
                         </svg>
                         <div className="absolute inset-0 flex flex-col items-center justify-center">
-                          <span className={`text-xs font-semibold uppercase tracking-wider ${dashStats.anomalies > 0 ? "text-red-400" : "text-zinc-400"}`}>異音検出</span>
-                          <span className={`text-4xl font-bold leading-none mt-1.5 ${dashStats.anomalies > 0 ? "text-red-600" : "text-zinc-800"}`}>{dashStats.anomalies}<span className="text-base font-medium ml-0.5">件</span></span>
+                          <span className={`text-xs font-semibold uppercase tracking-wider ${dashStats.anomalies > 0 ? "text-red-400" : "text-emerald-500"}`}>異音検出</span>
+                          <span className={`text-4xl font-bold leading-none mt-1.5 ${dashStats.anomalies > 0 ? "text-red-600" : "text-emerald-600"}`}>{dashStats.anomalies}<span className="text-base font-medium ml-0.5">件</span></span>
                         </div>
                       </div>
                     </div>
