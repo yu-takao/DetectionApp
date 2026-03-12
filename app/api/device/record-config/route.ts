@@ -110,6 +110,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("/api/device/record-config POST error", err);
-    return Response.json({ error: err?.message ?? "Failed to publish config" }, { status: 500 });
+    const detail = [err?.name, err?.message, err?.$metadata?.httpStatusCode].filter(Boolean).join(" | ");
+    return Response.json({ error: detail || "Failed to publish config" }, { status: 500 });
   }
 }
