@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { IoTDataPlaneClient, PublishCommand } from "@aws-sdk/client-iot-data-plane";
-import { fromIni } from "@aws-sdk/credential-providers";
+import { PublishCommand } from "@aws-sdk/client-iot-data-plane";
+import { getIotDataClient } from "@/lib/aws";
 
 type RecordRequest = {
   thing?: string;
@@ -9,25 +9,12 @@ type RecordRequest = {
   ext?: "flac" | "webm" | "wav" | "ogg";
 };
 
-const REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "ap-northeast-1";
-const IOT_ENDPOINT = process.env.IOT_ENDPOINT || "";
 const TOPIC_PREFIX = process.env.IOT_TOPIC_PREFIX || "devices";
 
-const inRuntime = !!process.env.AWS_EXECUTION_ENV;
-const useIniProfile = !inRuntime && !!process.env.AWS_PROFILE;
-
-const iotClient = new IoTDataPlaneClient({
-  region: REGION,
-  endpoint: IOT_ENDPOINT ? `https://${IOT_ENDPOINT}` : undefined,
-  ...(useIniProfile ? { credentials: fromIni({ profile: process.env.AWS_PROFILE || "trust-kawasaki-city-prod" }) } : {}),
-});
-
 export async function POST(req: NextRequest) {
-  if (!IOT_ENDPOINT) {
-    return new Response(JSON.stringify({ error: "IOT_ENDPOINT is not configured" }), {
-      status: 500,
-      headers: { "content-type": "application/json" },
-    });
+  const iotEndpoint = process.env.IOT_DATA_ENDPOINT || process.env.IOT_ENDPOINT || "";
+  if (!iotEndpoint) {
+    return Response.json({ error: "IOT_ENDPOINT is not configured" }, { status: 500 });
   }
 
   const body = (await req.json().catch(() => ({}))) as RecordRequest;
@@ -40,25 +27,17 @@ export async function POST(req: NextRequest) {
   const payload = JSON.stringify({ delaySec, durationSec, ext, requestedAt: Date.now() });
 
   try {
-    await iotClient.send(
+    const iot = getIotDataClient();
+    await iot.send(
       new PublishCommand({
         topic,
         payload: new TextEncoder().encode(payload),
         qos: 0,
       })
     );
-    return new Response(JSON.stringify({ ok: true, topic, delaySec, durationSec, ext }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
+    return Response.json({ ok: true, topic, delaySec, durationSec, ext });
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error("/api/device/record error", err);
-    return new Response(JSON.stringify({ error: "Failed to publish record command" }), {
-      status: 500,
-      headers: { "content-type": "application/json" },
-    });
+    return Response.json({ error: "Failed to publish record command" }, { status: 500 });
   }
 }
-
-

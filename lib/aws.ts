@@ -1,5 +1,6 @@
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { IoTDataPlaneClient } from "@aws-sdk/client-iot-data-plane";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 
 // Build-safe: do NOT read env or construct clients at module import time.
@@ -24,6 +25,15 @@ export function getS3Client() {
 
 export function getDynamoDbClient() {
   return new DynamoDBClient({ region: getRegion(), credentials: getCredentials() });
+}
+
+export function getIotDataClient() {
+  const endpoint = process.env.IOT_DATA_ENDPOINT || process.env.IOT_ENDPOINT || "";
+  return new IoTDataPlaneClient({
+    region: getRegion(),
+    endpoint: endpoint ? `https://${endpoint}` : undefined,
+    credentials: getCredentials(),
+  });
 }
 
 // Read runtime config from environment at call time to avoid build-time freezing.

@@ -1,34 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { IoTDataPlaneClient, PublishCommand } from "@aws-sdk/client-iot-data-plane";
-import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
-import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
+import { PublishCommand } from "@aws-sdk/client-iot-data-plane";
+import { GetItemCommand } from "@aws-sdk/client-dynamodb";
+import { getDynamoDbClient, getIotDataClient } from "@/lib/aws";
 import { verifyAndGetAdmin } from "@/lib/verify-token";
 
-// ---- Config ----
-
-const REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "ap-northeast-1";
-const DATA_ENDPOINT = process.env.IOT_DATA_ENDPOINT || process.env.IOT_ENDPOINT || "";
 const CONFIG_TABLE = process.env.RECORDER_CONFIG_TABLE || "RecorderConfig";
-
-function getCredentials() {
-  const inRuntime = !!process.env.AWS_EXECUTION_ENV;
-  const useIniProfile = !inRuntime && !!process.env.AWS_PROFILE;
-  if (useIniProfile) {
-    const { fromIni } = require("@aws-sdk/credential-providers");
-    return fromIni({ profile: process.env.AWS_PROFILE || "trust-kawasaki-city-prod" });
-  }
-  return fromNodeProviderChain();
-}
-
-const credentials = getCredentials();
-
-const iotClient = new IoTDataPlaneClient({
-  region: REGION,
-  endpoint: DATA_ENDPOINT ? `https://${DATA_ENDPOINT}` : undefined,
-  credentials,
-});
-
-const ddbClient = new DynamoDBClient({ region: REGION, credentials });
 
 // ---- GET: デバイスの現在適用済み設定を DynamoDB から取得 ----
 
@@ -36,7 +12,8 @@ export async function GET(req: NextRequest) {
   const thing = req.nextUrl.searchParams.get("thing") || "kawasaki-ras-1";
 
   try {
-    const result = await ddbClient.send(
+    const ddb = getDynamoDbClient();
+    const result = await ddb.send(
       new GetItemCommand({
         TableName: CONFIG_TABLE,
         Key: {
@@ -88,7 +65,8 @@ export async function POST(req: NextRequest) {
   const auth = await verifyAndGetAdmin(token);
   if (!auth?.isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  if (!DATA_ENDPOINT) {
+  const iotEndpoint = process.env.IOT_DATA_ENDPOINT || process.env.IOT_ENDPOINT || "";
+  if (!iotEndpoint) {
     return Response.json(
       { error: "IOT_DATA_ENDPOINT is not configured" },
       { status: 500 }
@@ -115,7 +93,8 @@ export async function POST(req: NextRequest) {
   const topic = `cmd/${thing}/recorder/config`;
 
   try {
-    await iotClient.send(
+    const iot = getIotDataClient();
+    await iot.send(
       new PublishCommand({
         topic,
         qos: 1,
