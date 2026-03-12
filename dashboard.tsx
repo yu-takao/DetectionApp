@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback, useMemo, type ReactNode } from "react"
+import { useAuth } from "@/lib/auth-context"
 import {
   AlertCircle,
   AlertTriangle,
@@ -15,7 +16,6 @@ import {
   Loader2,
   LogOut,
   Mic,
-  PanelLeftClose,
   Save,
   Send,
   Server,
@@ -59,6 +59,7 @@ function Sidebar({
   collapsed: boolean
   onToggleCollapse: () => void
 }) {
+  const { user, logout } = useAuth()
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
   const [showText, setShowText] = useState(!collapsed)
 
@@ -94,15 +95,7 @@ function Sidebar({
           <Hexagon className="text-violet-400" style={{ width: 22, height: 22 }} />
         </button>
         {showText && (
-          <>
-            <h1 className="text-xs font-bold text-white ml-2.5 whitespace-nowrap">OtoMoni</h1>
-            <button
-              onClick={onToggleCollapse}
-              className="ml-auto p-1.5 rounded-full bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
-            >
-              <PanelLeftClose style={{ width: 13, height: 13 }} />
-            </button>
-          </>
+          <h1 className="text-xs font-bold text-white ml-2.5 whitespace-nowrap">Noise Monitor</h1>
         )}
       </div>
 
@@ -153,12 +146,13 @@ function Sidebar({
                 <User className="w-3 h-3 text-zinc-300" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-medium text-white truncate">管理者</p>
-                <p className="text-[9px] text-zinc-500 truncate">kawasaki-city</p>
+                <p className="text-[11px] font-medium text-white truncate">{user?.isAdmin ? "管理者" : "ユーザー"}</p>
+                <p className="text-[9px] text-zinc-500 truncate">{user?.email || ""}</p>
               </div>
             </div>
           )}
           <button
+            onClick={logout}
             className={`w-full flex items-center justify-center rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all duration-200 font-medium ${
               collapsed ? "p-2.5" : "gap-1.5 px-3 py-2"
             }`}
@@ -176,6 +170,7 @@ function Sidebar({
 // ─── Main Dashboard ─────────────────────────────────────────
 
 export default function Dashboard() {
+  const { user } = useAuth()
   const [devicesStatus, setDevicesStatus] = useState([
     { name: "kawasaki-ras-1", online: true },
   ])
@@ -368,7 +363,7 @@ export default function Dashboard() {
   const navItems: NavItem[] = [
     { id: "dashboard", label: "ダッシュボード", icon: <Command className="w-4 h-4" /> },
     { id: "sound", label: "音確認", icon: <Ear className="w-4 h-4" /> },
-    { id: "settings", label: "設定", icon: <Settings className="w-4 h-4" /> },
+    ...(user?.isAdmin ? [{ id: "settings" as const, label: "設定", icon: <Settings className="w-4 h-4" /> }] : []),
   ]
 
   const activeNavItem = navItems.find(item => item.id === activeSection)
@@ -865,7 +860,7 @@ function RecorderSettings() {
   const status = statusConfig[sendStatus] ?? null
 
   return (
-    <div className="bg-white border border-zinc-200/80 rounded-2xl overflow-hidden">
+    <div className="bg-white rounded-2xl overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 px-6 py-3.5 border-b border-zinc-100 bg-zinc-50/50">
         <Mic className="h-3.5 w-3.5 text-zinc-500" />
@@ -1027,7 +1022,7 @@ function InferenceSettings() {
   }
 
   return (
-    <div className="bg-white border border-zinc-200/80 rounded-2xl overflow-hidden">
+    <div className="bg-white rounded-2xl overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 px-6 py-3.5 border-b border-zinc-100 bg-zinc-50/50">
         <Brain className="h-3.5 w-3.5 text-zinc-500" />

@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { getDynamoDbClient, getAwsRuntimeConfig } from "@/lib/aws";
 import { GetItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { verifyAndGetAdmin } from "@/lib/verify-token";
 
 export const revalidate = 0;
 
@@ -38,9 +39,14 @@ export async function GET() {
   }
 }
 
-/** POST: 推論設定を更新 */
-export async function POST(req: Request) {
+/** POST: 推論設定を更新 (admin only) */
+export async function POST(req: NextRequest) {
   try {
+    const token = req.cookies.get("auth-token")?.value;
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const auth = await verifyAndGetAdmin(token);
+    if (!auth?.isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const { audioTableName } = getAwsRuntimeConfig();
     if (!audioTableName) {
       return NextResponse.json({ error: "AUDIO_TABLE_NAME is not set" }, { status: 500 });

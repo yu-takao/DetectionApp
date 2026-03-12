@@ -1,7 +1,8 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { IoTDataPlaneClient, PublishCommand } from "@aws-sdk/client-iot-data-plane";
 import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
+import { verifyAndGetAdmin } from "@/lib/verify-token";
 
 // ---- Config ----
 
@@ -81,6 +82,12 @@ type ConfigRequest = {
 };
 
 export async function POST(req: NextRequest) {
+  // Admin only
+  const token = req.cookies.get("auth-token")?.value;
+  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await verifyAndGetAdmin(token);
+  if (!auth?.isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   if (!DATA_ENDPOINT) {
     return Response.json(
       { error: "IOT_DATA_ENDPOINT is not configured" },

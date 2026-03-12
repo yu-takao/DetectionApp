@@ -1,11 +1,12 @@
 import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
+import { AuthProvider } from '@/lib/auth-context'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'OtoMoni',
-  description: 'OtoMoni - 音のモニタリングアプリケーション',
+  title: 'Noise Monitor',
+  description: 'Noise Monitor - 異音検出モニタリングシステム',
   generator: 'v0.dev',
   icons: {
     icon: '/icon.svg',
@@ -30,7 +31,7 @@ html {
 }
         `}</style>
       </head>
-      <body>{children}</body>
+      <body><AuthProvider>{children}</AuthProvider></body>
     </html>
   )
 }
