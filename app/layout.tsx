@@ -1,7 +1,12 @@
 import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
-import { AuthProvider } from '@/lib/auth-context'
+import dynamic from 'next/dynamic'
+
+const AuthProvider = dynamic(
+  () => import('@/lib/auth-context').then((mod) => mod.AuthProvider),
+  { ssr: false }
+)
 import './globals.css'
 
 export const metadata: Metadata = {
