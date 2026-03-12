@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { CognitoUserPool, CognitoUser, AuthenticationDetails, CognitoUserSession } from "amazon-cognito-identity-js";
 import { COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID } from "./cognito";
 
@@ -74,7 +74,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [cognitoUser, setCognitoUser] = useState<CognitoUser | null>(null);
 
-  // Check existing session on mount
+  const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Refresh session: getSession() automatically uses the refresh token
+  const refreshSession = useCallback(() => {
+    try {
+      const currentUser = getUserPool().getCurrentUser();
+      if (!currentUser) return;
+      currentUser.getSession((err: Error | null, session: CognitoUserSession | null) => {
+        if (err || !session || !session.isValid()) {
+          // Refresh token expired — force re-login
+          setUser(null);
+          clearTokenCookie();
+          return;
+        }
+        setUser(parseUser(session));
+        setTokenCookie(session);
+      });
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Check existing session on mount + set up periodic refresh
   useEffect(() => {
     try {
       const currentUser = getUserPool().getCurrentUser();
@@ -95,7 +117,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Auth initialization failed:", e);
       setLoading(false);
     }
-  }, []);
+
+    // Refresh token every 45 minutes (ID token expires in 60 min)
+    refreshTimer.current = setInterval(refreshSession, 45 * 60 * 1000);
+    return () => {
+      if (refreshTimer.current) clearInterval(refreshTimer.current);
+    };
+  }, [refreshSession]);
 
   const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string; newPasswordRequired?: boolean }> => {
     return new Promise((resolve) => {
