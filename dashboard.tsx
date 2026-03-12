@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useState, useCallback, useMemo, type ReactNode } from "react"
+import { useEffect, useState, useCallback, useMemo, useRef, type ReactNode } from "react"
 import { useAuth } from "@/lib/auth-context"
 import {
   AlertCircle,
   AlertTriangle,
+  Bell,
   Brain,
   Check as CheckIcon,
   CheckCircle2,
@@ -16,10 +17,12 @@ import {
   Loader2,
   LogOut,
   Mic,
+  Plus,
   Save,
   Send,
   Server,
   Settings,
+  Trash2,
   TrendingUp,
   User,
   Wifi,
@@ -326,6 +329,30 @@ export default function Dashboard() {
     const withScore = dashItems.filter(it => typeof it.reconstructionError === "number")
     const anomalies = withScore.filter(it => it.reconstructionError! >= currentThreshold)
     return { anomalies: anomalies.length }
+  }, [dashItems, currentThreshold])
+
+  // SMS通知: 新しい異音が検出されたら送信
+  const notifiedKeysRef = useRef<Set<string>>(new Set())
+  const smsSendingRef = useRef(false)
+  useEffect(() => {
+    const anomalies = dashItems.filter(it =>
+      typeof it.reconstructionError === "number" && it.reconstructionError >= currentThreshold
+    )
+    const newAnomalies = anomalies.filter(it => !notifiedKeysRef.current.has(it.key))
+    if (newAnomalies.length === 0 || smsSendingRef.current) return
+    // 初回ロード時は通知せずキーだけ記録
+    if (notifiedKeysRef.current.size === 0 && anomalies.length > 0) {
+      anomalies.forEach(it => notifiedKeysRef.current.add(it.key))
+      return
+    }
+    smsSendingRef.current = true
+    const maxError = Math.max(...newAnomalies.map(it => it.reconstructionError!))
+    fetch("/api/notification/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ anomalyCount: newAnomalies.length, maxError, threshold: currentThreshold }),
+    }).catch(() => {}).finally(() => { smsSendingRef.current = false })
+    newAnomalies.forEach(it => notifiedKeysRef.current.add(it.key))
   }, [dashItems, currentThreshold])
 
   // Chart data (chronological order, 現在の閾値で再評価)
@@ -709,6 +736,7 @@ export default function Dashboard() {
               <div className="space-y-6">
                 <RecorderSettings />
                 <InferenceSettings />
+                <NotificationSettings />
               </div>
             )}
           </div>
@@ -1084,6 +1112,168 @@ function InferenceSettings() {
             <button
               onClick={handleSave}
               disabled={!hasChanges || saving || !selectedModel}
+              className="inline-flex items-center gap-1.5 py-1.5 px-4 rounded-lg text-[13px] font-medium bg-violet-500 hover:bg-violet-400 active:scale-[0.97] text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              設定を保存
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Notification Settings ──────────────────────────────────
+
+function NotificationSettings() {
+  const [enabled, setEnabled] = useState(false)
+  const [phoneNumbers, setPhoneNumbers] = useState<string[]>([""])
+  const [cooldownMinutes, setCooldownMinutes] = useState(5)
+  const [initialEnabled, setInitialEnabled] = useState(false)
+  const [initialPhoneNumbers, setInitialPhoneNumbers] = useState<string[]>([""])
+  const [initialCooldown, setInitialCooldown] = useState(5)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    let aborted = false
+    async function load() {
+      try {
+        const res = await fetch("/api/notification/config", { cache: "no-store" })
+        if (!res.ok || aborted) return
+        const cfg = await res.json()
+        const nums = cfg.phoneNumbers?.length ? cfg.phoneNumbers : [""]
+        setEnabled(cfg.enabled ?? false)
+        setPhoneNumbers(nums)
+        setCooldownMinutes(cfg.cooldownMinutes ?? 5)
+        setInitialEnabled(cfg.enabled ?? false)
+        setInitialPhoneNumbers(nums)
+        setInitialCooldown(cfg.cooldownMinutes ?? 5)
+      } catch { /* ignore */ }
+      finally { if (!aborted) setLoading(false) }
+    }
+    load()
+    return () => { aborted = true }
+  }, [])
+
+  async function handleSave() {
+    setSaving(true)
+    setSaved(false)
+    try {
+      const numbers = phoneNumbers.filter((p) => p.trim())
+      const res = await fetch("/api/notification/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled, phoneNumbers: numbers, cooldownMinutes }),
+      })
+      if (res.ok) {
+        const saved = numbers.length ? numbers : [""]
+        setInitialEnabled(enabled)
+        setInitialPhoneNumbers(saved)
+        setInitialCooldown(cooldownMinutes)
+        setSaved(true)
+        setTimeout(() => setSaved(false), 3000)
+      }
+    } catch (e) {
+      console.error("Failed to save notification config", e)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const hasChanges =
+    enabled !== initialEnabled ||
+    cooldownMinutes !== initialCooldown ||
+    JSON.stringify(phoneNumbers.filter((p) => p.trim())) !== JSON.stringify(initialPhoneNumbers.filter((p) => p.trim()))
+
+  const addPhone = () => setPhoneNumbers([...phoneNumbers, ""])
+  const removePhone = (idx: number) => setPhoneNumbers(phoneNumbers.filter((_, i) => i !== idx))
+  const updatePhone = (idx: number, val: string) => {
+    const next = [...phoneNumbers]
+    next[idx] = val
+    setPhoneNumbers(next)
+  }
+
+  const cooldownOptions = [
+    { label: "1分", value: 1 },
+    { label: "3分", value: 3 },
+    { label: "5分", value: 5 },
+    { label: "10分", value: 10 },
+    { label: "30分", value: 30 },
+    { label: "1時間", value: 60 },
+  ]
+
+  return (
+    <div className="bg-white rounded-2xl overflow-hidden">
+      <div className="flex items-center gap-2 px-6 py-3.5 border-b border-zinc-100 bg-zinc-50/50">
+        <Bell className="h-3.5 w-3.5 text-zinc-500" />
+        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">SMS通知設定</span>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 text-sm text-zinc-400 py-12">
+          <Loader2 className="h-4 w-4 animate-spin" />読み込み中...
+        </div>
+      ) : (
+        <div className="px-6">
+          <SettingRow label="SMS通知" description="異音検出時にSMSで通知">
+            <button
+              onClick={() => setEnabled(!enabled)}
+              className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 ${enabled ? "bg-violet-500" : "bg-zinc-300"}`}
+            >
+              <span className={`absolute top-[3px] left-[3px] w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${enabled ? "translate-x-[18px]" : "translate-x-0"}`} />
+            </button>
+          </SettingRow>
+
+          <SettingRow label="送信間隔" description="連続通知を防ぐクールダウン">
+            <select value={cooldownMinutes} onChange={(e) => setCooldownMinutes(Number(e.target.value))} className={selectClass}>
+              {cooldownOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </SettingRow>
+
+          <div className="py-3.5 border-b border-zinc-100">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-[13px] font-medium text-zinc-700">電話番号</p>
+                <p className="text-[11px] text-zinc-400 mt-0.5">国際形式で入力（例: +819012345678）</p>
+              </div>
+              <button onClick={addPhone} className="p-1 rounded-md hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors">
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {phoneNumbers.map((phone, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => updatePhone(idx, e.target.value)}
+                    placeholder="+819012345678"
+                    className={`${inputClass} flex-1`}
+                  />
+                  {phoneNumbers.length > 1 && (
+                    <button onClick={() => removePhone(idx)} className="p-1.5 rounded-md hover:bg-red-50 text-zinc-300 hover:text-red-400 transition-colors">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="py-4 flex items-center justify-between">
+            {saved ? (
+              <span className="inline-flex items-center gap-1.5 text-[12px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                <CheckIcon className="h-3.5 w-3.5" />保存しました
+              </span>
+            ) : <span />}
+            <button
+              onClick={handleSave}
+              disabled={!hasChanges || saving}
               className="inline-flex items-center gap-1.5 py-1.5 px-4 rounded-lg text-[13px] font-medium bg-violet-500 hover:bg-violet-400 active:scale-[0.97] text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}

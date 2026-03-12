@@ -4,10 +4,16 @@ import { createContext, useContext, useEffect, useState, useCallback, type React
 import { CognitoUserPool, CognitoUser, AuthenticationDetails, CognitoUserSession } from "amazon-cognito-identity-js";
 import { COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID } from "./cognito";
 
-const userPool = new CognitoUserPool({
-  UserPoolId: COGNITO_USER_POOL_ID,
-  ClientId: COGNITO_CLIENT_ID,
-});
+let _userPool: CognitoUserPool | null = null;
+function getUserPool(): CognitoUserPool {
+  if (!_userPool) {
+    _userPool = new CognitoUserPool({
+      UserPoolId: COGNITO_USER_POOL_ID,
+      ClientId: COGNITO_CLIENT_ID,
+    });
+  }
+  return _userPool;
+}
 
 type AuthUser = {
   username: string;
@@ -65,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check existing session on mount
   useEffect(() => {
-    const currentUser = userPool.getCurrentUser();
+    const currentUser = getUserPool().getCurrentUser();
     if (!currentUser) {
       setLoading(false);
       return;
@@ -83,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string; newPasswordRequired?: boolean }> => {
     return new Promise((resolve) => {
-      const cu = new CognitoUser({ Username: username, Pool: userPool });
+      const cu = new CognitoUser({ Username: username, Pool: getUserPool() });
       const authDetails = new AuthenticationDetails({ Username: username, Password: password });
 
       cu.authenticateUser(authDetails, {
@@ -121,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [cognitoUser]);
 
   const logout = useCallback(() => {
-    const currentUser = userPool.getCurrentUser();
+    const currentUser = getUserPool().getCurrentUser();
     if (currentUser) currentUser.signOut();
     setUser(null);
     clearTokenCookie();
