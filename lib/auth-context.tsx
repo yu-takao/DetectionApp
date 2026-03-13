@@ -59,13 +59,18 @@ function parseUser(session: CognitoUserSession): AuthUser {
   };
 }
 
+const COOKIE_NAME = "sonic-eye-token";
+
 function setTokenCookie(session: CognitoUserSession) {
   const token = session.getIdToken().getJwtToken();
   const maxAge = 60 * 60; // 1 hour
-  document.cookie = `auth-token=${token}; path=/; max-age=${maxAge}; SameSite=Lax`;
+  document.cookie = `${COOKIE_NAME}=${token}; path=/; max-age=${maxAge}; SameSite=Lax`;
+  // Clear legacy cookie if present
+  document.cookie = "auth-token=; path=/; max-age=0";
 }
 
 function clearTokenCookie() {
+  document.cookie = `${COOKIE_NAME}=; path=/; max-age=0`;
   document.cookie = "auth-token=; path=/; max-age=0";
 }
 

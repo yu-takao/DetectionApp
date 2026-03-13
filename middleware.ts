@@ -1,6 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jwtVerify, createRemoteJWKSet } from "jose";
 
-export function middleware(req: NextRequest) {
+const COOKIE_NAME = "sonic-eye-token";
+const POOL_ID = process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID || "";
+const REGION = process.env.NEXT_PUBLIC_COGNITO_REGION || "ap-northeast-1";
+const ISSUER = `https://cognito-idp.${REGION}.amazonaws.com/${POOL_ID}`;
+const JWKS_URI = `${ISSUER}/.well-known/jwks.json`;
+
+let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+function getJwks() {
+  if (!jwks) jwks = createRemoteJWKSet(new URL(JWKS_URI));
+  return jwks;
+}
+
+async function isTokenValid(token: string): Promise<boolean> {
+  try {
+    await jwtVerify(token, getJwks(), { issuer: ISSUER });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Login page and static assets are always accessible
@@ -8,18 +30,18 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const token = req.cookies.get("auth-token")?.value;
+  const token = req.cookies.get(COOKIE_NAME)?.value;
 
-  // API routes: return 401 if no token
+  // API routes: return 401 if no token or invalid
   if (pathname.startsWith("/api/")) {
-    if (!token) {
+    if (!token || !(await isTokenValid(token))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     return NextResponse.next();
   }
 
-  // Pages: redirect to login if no token
-  if (!token) {
+  // Pages: redirect to login if no token or invalid
+  if (!token || !(await isTokenValid(token))) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 

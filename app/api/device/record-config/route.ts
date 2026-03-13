@@ -60,7 +60,7 @@ type ConfigRequest = {
 
 export async function POST(req: NextRequest) {
   // Admin only
-  const token = req.cookies.get("auth-token")?.value;
+  const token = req.cookies.get("sonic-eye-token")?.value;
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const auth = await verifyAndGetAdmin(token);
   if (!auth?.isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
