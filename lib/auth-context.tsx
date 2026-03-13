@@ -63,7 +63,8 @@ const COOKIE_NAME = "sonic-eye-token";
 
 function setTokenCookie(session: CognitoUserSession) {
   const token = session.getIdToken().getJwtToken();
-  const maxAge = 60 * 60; // 1 hour
+  // Cookie自体は7日間保持（JWT検証はサーバー側で行う）
+  const maxAge = 7 * 24 * 60 * 60;
   document.cookie = `${COOKIE_NAME}=${token}; path=/; max-age=${maxAge}; SameSite=Lax`;
   // Clear legacy cookie if present
   document.cookie = "auth-token=; path=/; max-age=0";
@@ -125,8 +126,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Refresh token every 45 minutes (ID token expires in 60 min)
     refreshTimer.current = setInterval(refreshSession, 45 * 60 * 1000);
+
+    // Refresh when tab becomes visible again (handles sleep/background)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshSession();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       if (refreshTimer.current) clearInterval(refreshTimer.current);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [refreshSession]);
 
