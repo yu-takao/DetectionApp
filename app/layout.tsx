@@ -5,8 +5,8 @@ import AuthProviderClient from '@/lib/auth-provider-client'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Noise Monitor',
-  description: 'Noise Monitor - 異音検出モニタリングシステム',
+  title: 'OtoMoni',
+  description: 'OtoMoni - 異音検出モニタリングシステム',
   generator: 'v0.dev',
   icons: {
     icon: '/icon.svg',

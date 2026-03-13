@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     // SMS送信
     const sns = getSnsClient();
-    const message = `【Noise Monitor】異音を${anomalyCount}件検出しました（最大異常度: ${maxError.toFixed(1)} / 閾値: ${threshold.toFixed(1)}）`;
+    const message = `【OtoMoni】異音を${anomalyCount}件検出しました（最大異常度: ${maxError.toFixed(1)} / 閾値: ${threshold.toFixed(1)}）`;
 
     const results = await Promise.allSettled(
       phoneNumbers.map((phone) =>

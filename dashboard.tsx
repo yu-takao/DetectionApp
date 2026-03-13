@@ -98,7 +98,7 @@ function Sidebar({
           <Hexagon className="text-violet-400" style={{ width: 22, height: 22 }} />
         </button>
         {showText && (
-          <h1 className="text-xs font-bold text-white ml-2.5 whitespace-nowrap">Noise Monitor</h1>
+          <h1 className="text-xs font-bold text-white ml-2.5 whitespace-nowrap">OtoMoni</h1>
         )}
       </div>
 

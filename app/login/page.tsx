@@ -58,7 +58,7 @@ export default function LoginPage() {
           <div className="p-3 bg-zinc-900 rounded-2xl mb-3">
             <Hexagon className="text-violet-400" style={{ width: 32, height: 32 }} />
           </div>
-          <h1 className="text-lg font-bold text-zinc-800 tracking-tight">Noise Monitor</h1>
+          <h1 className="text-lg font-bold text-zinc-800 tracking-tight">OtoMoni</h1>
           <p className="text-xs text-zinc-400 mt-0.5">異音検出モニタリングシステム</p>
         </div>
 
