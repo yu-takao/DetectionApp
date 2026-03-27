@@ -191,71 +191,9 @@ export default function Dashboard() {
     inferenceThreshold?: number
     inferenceTimestamp?: number
   }
-  const [audioItems, setAudioItems] = useState<AudioItem[]>([])
-  const [audioLoading, setAudioLoading] = useState(false)
   const [audioFilter, setAudioFilter] = useState<"all" | "normal" | "anomaly">("all")
   const [audioPageSize, setAudioPageSize] = useState(10)
-  const [audioCursors, setAudioCursors] = useState<(string | null)[]>([null])
   const [audioPage, setAudioPage] = useState(0)
-  const [audioNextCursor, setAudioNextCursor] = useState<string | null>(null)
-  const [audioPeriod, setAudioPeriod] = useState<"all" | "today" | "3d" | "7d" | "30d">("all")
-
-  const getDateRange = useCallback(() => {
-    if (audioPeriod === "all") return { from: undefined, to: undefined }
-    const now = Date.now()
-    const days = audioPeriod === "today" ? 1 : audioPeriod === "3d" ? 3 : audioPeriod === "7d" ? 7 : 30
-    const from = now - days * 24 * 60 * 60 * 1000
-    return { from: String(from), to: String(now) }
-  }, [audioPeriod])
-
-  const fetchAudio = useCallback(async (cursor: string | null) => {
-    setAudioLoading(true)
-    try {
-      const { from, to } = getDateRange()
-      const q = new URLSearchParams({ limit: String(audioPageSize) })
-      if (cursor) q.set("cursor", cursor)
-      if (from) q.set("from", from)
-      if (to) q.set("to", to)
-      const res = await fetch(`/api/audio/latest?${q}`, { cache: "no-store" })
-      if (!res.ok) return
-      const data = await res.json()
-      if (Array.isArray(data.items)) setAudioItems(data.items)
-      if (typeof data.currentThreshold === "number") setCurrentThreshold(data.currentThreshold)
-      setAudioNextCursor(data.nextCursor ?? null)
-    } catch { /* ignore */ }
-    finally { setAudioLoading(false) }
-  }, [audioPageSize, getDateRange])
-
-  // 初回 + フィルタ変更時にリセット
-  useEffect(() => {
-    setAudioPage(0)
-    setAudioCursors([null])
-    fetchAudio(null)
-  }, [audioPageSize, audioPeriod, fetchAudio])
-
-  // 自動更新（1ページ目のみ10秒ポーリング）
-  useEffect(() => {
-    if (audioPage !== 0) return
-    const t = setInterval(() => fetchAudio(null), 10000)
-    return () => clearInterval(t)
-  }, [audioPage, fetchAudio])
-
-  const handleAudioNextPage = () => {
-    if (!audioNextCursor) return
-    const newPage = audioPage + 1
-    const newCursors = [...audioCursors]
-    newCursors[newPage] = audioNextCursor
-    setAudioCursors(newCursors)
-    setAudioPage(newPage)
-    fetchAudio(audioNextCursor)
-  }
-
-  const handleAudioPrevPage = () => {
-    if (audioPage <= 0) return
-    const newPage = audioPage - 1
-    setAudioPage(newPage)
-    fetchAudio(audioCursors[newPage])
-  }
 
   // Heartbeat: センサー死活取得（15秒ポーリング）
   useEffect(() => {
@@ -280,32 +218,24 @@ export default function Dashboard() {
 
   // 現在の閾値（APIから取得、表示判定に使用）
   const [currentThreshold, setCurrentThreshold] = useState(5.0)
-
   // 現在の閾値で再評価する関数
   const isAnomalyNow = useCallback((it: AudioItem) => {
     if (typeof it.reconstructionError !== "number") return undefined
     return it.reconstructionError >= currentThreshold
   }, [currentThreshold])
 
-  const filteredAudioItems = audioItems.filter((it) => {
-    const anomaly = isAnomalyNow(it)
-    if (audioFilter === "normal") return anomaly === false
-    if (audioFilter === "anomaly") return anomaly === true
-    return true
-  })
-
-  // Dashboard: 直近100件を取得（チャート + 異音一覧用）
+  // Dashboard: チャート + 音確認用データ
   const [dashItems, setDashItems] = useState<AudioItem[]>([])
   const [dashLoading, setDashLoading] = useState(false)
-  const [dashPeriod, setDashPeriod] = useState<"today" | "3d" | "7d" | "30d">("7d")
+  const [dashPeriod, setDashPeriod] = useState<"today" | "3d">("3d")
 
   const fetchDashData = useCallback(async () => {
     setDashLoading(true)
     try {
       const now = Date.now()
-      const days = dashPeriod === "today" ? 1 : dashPeriod === "3d" ? 3 : dashPeriod === "7d" ? 7 : 30
+      const days = dashPeriod === "today" ? 1 : 3
       const from = now - days * 24 * 60 * 60 * 1000
-      const q = new URLSearchParams({ limit: "100", from: String(from), to: String(now) })
+      const q = new URLSearchParams({ chart: "1", from: String(from), to: String(now) })
       const res = await fetch(`/api/audio/latest?${q}`, { cache: "no-store" })
       if (!res.ok) return
       const data = await res.json()
@@ -376,6 +306,31 @@ export default function Dashboard() {
       typeof it.reconstructionError === "number" && it.reconstructionError >= currentThreshold
     )
   }, [dashItems, currentThreshold])
+
+  // 音確認: dashItems をフィルタしてクライアント側ページネーション
+  const filteredAudioItems = useMemo(() => {
+    return dashItems.filter((it) => {
+      if (audioFilter === "all") return true
+      if (typeof it.reconstructionError !== "number") return false
+      const isAnomaly = it.reconstructionError >= currentThreshold
+      if (audioFilter === "anomaly") return isAnomaly
+      return !isAnomaly
+    })
+  }, [dashItems, audioFilter, currentThreshold])
+
+  const dashDateRange = useMemo(() => {
+    if (dashItems.length === 0) return ""
+    const dates = dashItems.map(it => new Date(it.lastModified!).getTime()).filter(t => !isNaN(t))
+    if (dates.length === 0) return ""
+    const fmt = (t: number) => new Date(t).toLocaleDateString("ja-JP", { month: "2-digit", day: "2-digit" })
+    return `${fmt(Math.min(...dates))}〜${fmt(Math.max(...dates))}`
+  }, [dashItems])
+
+  const totalAudioPages = Math.max(1, Math.ceil(filteredAudioItems.length / audioPageSize))
+  const pagedAudioItems = filteredAudioItems.slice(audioPage * audioPageSize, (audioPage + 1) * audioPageSize)
+
+  // フィルタ変更時にページリセット
+  useEffect(() => { setAudioPage(0) }, [audioFilter, audioPageSize])
 
   const formatIsoLocal = (iso?: string) => {
     if (!iso) return ""
@@ -491,8 +446,8 @@ export default function Dashboard() {
                       {dashLoading && <Loader2 className="h-3 w-3 animate-spin text-zinc-400" />}
                     </div>
                     <div className="flex items-center gap-1">
-                      {(["today", "3d", "7d", "30d"] as const).map((p) => {
-                        const labels = { today: "24h", "3d": "3日", "7d": "7日", "30d": "30日" }
+                      {(["today", "3d"] as const).map((p) => {
+                        const labels = { today: "24h", "3d": "3日" }
                         return (
                           <button
                             key={p}
@@ -536,7 +491,7 @@ export default function Dashboard() {
                               tick={{ fontSize: 10, fill: "#a1a1aa" }}
                               axisLine={false}
                               tickLine={false}
-                              domain={[0, (max: number) => Math.max(max * 1.2, 8)]}
+                              domain={[0, 10]} allowDataOverflow={true}
                             />
                             <Tooltip
                               contentStyle={{
@@ -609,9 +564,11 @@ export default function Dashboard() {
                               </p>
                             )}
                           </div>
-                          <div className="w-[240px] flex-shrink-0">
-                            <audio controls src={it.url} preload="metadata" className="w-full h-8" />
-                          </div>
+                          {it.url && (
+                            <div className="w-[240px] flex-shrink-0">
+                              <audio controls src={it.url} preload="metadata" className="w-full h-8" />
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -641,18 +598,8 @@ export default function Dashboard() {
                     ))}
                   </div>
                   <div className="flex items-center gap-2">
-                    {audioLoading && <Loader2 className="h-3 w-3 animate-spin text-zinc-400" />}
-                    <select
-                      value={audioPeriod}
-                      onChange={(e) => setAudioPeriod(e.target.value as typeof audioPeriod)}
-                      className="px-2 py-1 bg-transparent text-xs text-zinc-500 focus:outline-none cursor-pointer"
-                    >
-                      <option value="all">全期間</option>
-                      <option value="today">24時間</option>
-                      <option value="3d">3日間</option>
-                      <option value="7d">7日間</option>
-                      <option value="30d">30日間</option>
-                    </select>
+                    {dashLoading && <Loader2 className="h-3 w-3 animate-spin text-zinc-400" />}
+                    <span className="text-xs text-zinc-400">{dashDateRange} / {filteredAudioItems.length}件</span>
                     <select
                       value={audioPageSize}
                       onChange={(e) => setAudioPageSize(Number(e.target.value))}
@@ -667,15 +614,15 @@ export default function Dashboard() {
 
                 {/* データ一覧 */}
                 <div className="bg-zinc-50 rounded-2xl px-6">
-                  {filteredAudioItems.length === 0 ? (
+                  {pagedAudioItems.length === 0 ? (
                     <div className="py-16 text-sm text-zinc-400 text-center">
-                      {audioItems.length === 0
+                      {dashItems.length === 0
                         ? "まだデータがありません。新しい録音が追加されると自動で表示されます。"
                         : "該当するデータがありません。"}
                     </div>
                   ) : (
                     <div className="divide-y divide-zinc-200/60">
-                      {filteredAudioItems.map((it, idx) => {
+                      {pagedAudioItems.map((it, idx) => {
                         const anomaly = isAnomalyNow(it)
                         return (
                         <div key={`${it.key}-${idx}`} className="flex items-center gap-4 py-3.5">
@@ -699,7 +646,7 @@ export default function Dashboard() {
                             )}
                           </div>
                           <div className="w-[280px] flex-shrink-0">
-                            <audio controls src={it.url} preload="metadata" className="w-full h-8" />
+                            <audio controls src={`/api/audio/stream?key=${encodeURIComponent(it.key)}`} preload="none" className="w-full h-8" />
                           </div>
                         </div>
                         )
@@ -710,18 +657,18 @@ export default function Dashboard() {
 
                 {/* フッター: ページネーション */}
                 <div className="flex items-center justify-between px-2 py-3 text-xs text-zinc-400">
-                  <span>ページ {audioPage + 1}</span>
+                  <span>ページ {audioPage + 1} / {totalAudioPages}</span>
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={handleAudioPrevPage}
+                      onClick={() => setAudioPage(p => p - 1)}
                       disabled={audioPage === 0}
                       className="p-1.5 rounded-md hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                     >
                       <ChevronLeft className="h-3.5 w-3.5" />
                     </button>
                     <button
-                      onClick={handleAudioNextPage}
-                      disabled={!audioNextCursor}
+                      onClick={() => setAudioPage(p => p + 1)}
+                      disabled={audioPage >= totalAudioPages - 1}
                       className="p-1.5 rounded-md hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                     >
                       <ChevronRight className="h-3.5 w-3.5" />
